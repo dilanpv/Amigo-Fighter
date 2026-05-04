@@ -1,0 +1,341 @@
+import React, { useState } from 'react';
+import Cropper from 'react-easy-crop';
+
+const getCroppedImg = (imageSrc, pixelCrop) => {
+  const canvas = document.createElement('canvas');
+  canvas.width = pixelCrop.width;
+  canvas.height = pixelCrop.height;
+  const ctx = canvas.getContext('2d');
+  
+  const image = new Image();
+  image.src = imageSrc;
+  
+  return new Promise((resolve) => {
+    image.onload = () => {
+      ctx.beginPath();
+      ctx.arc(pixelCrop.width / 2, pixelCrop.height / 2, pixelCrop.width / 2, 0, Math.PI * 2);
+      ctx.closePath();
+      ctx.clip();
+
+      ctx.drawImage(
+        image,
+        pixelCrop.x, pixelCrop.y,
+        pixelCrop.width, pixelCrop.height,
+        0, 0,
+        pixelCrop.width, pixelCrop.height
+      );
+      resolve(canvas.toDataURL('image/png'));
+    };
+  });
+};
+
+const CHARACTERS = [
+  { 
+    id: 'ninja', 
+    name: 'EL NINJA', 
+    img: '/assets/El Ninja.png',
+    portrait: '/assets/El_Ninja_seleccion-removebg-preview.png',
+    cols: 12, rows: 4, 
+    fWidth: 115, fHeight: 188,
+    headPos: { top: '15%', left: '50%' } 
+  },
+  { 
+    id: 'campeon', 
+    name: 'EL CAMPEÓN', 
+    img: '/assets/El Campeón.png', 
+    portrait: '/assets/El_Campeón_seleccion-removebg-preview.png',
+    cols: 12, rows: 4, 
+    fWidth: 115, fHeight: 188,
+    headPos: { top: '14%', left: '50%' } 
+  },
+  { 
+    id: 'agresivo', 
+    name: 'EL AGRESIVO', 
+    img: '/assets/El Agresivo.png', 
+    portrait: '/assets/El_Agresivo_seleccion-removebg-preview.png',
+    cols: 11, rows: 4, 
+    fWidth: 128, fHeight: 192,
+    headPos: { top: '12%', left: '50%' } 
+  },
+  { 
+    id: 'luchador', 
+    name: 'LUCHADOR', 
+    img: '/assets/Luchador.png', 
+    portrait: '/assets/Luchador_seleccion-removebg-preview.png',
+    cols: 11, rows: 4, 
+    fWidth: 128, fHeight: 192,
+    headPos: { top: '16%', left: '50%' } 
+  },
+];
+
+function CharacterSelect({ playerData, opponentInfo, onReady, onBack }) {
+  const [selectedChar, setSelectedChar] = useState(CHARACTERS[0]);
+  const [face, setFace] = useState(null);
+  const [stats, setStats] = useState({ str: 4, spd: 3, res: 3 });
+  const [style, setStyle] = useState('Balanceado');
+  const [points, setPoints] = useState(0);
+  const [mobileStep, setMobileStep] = useState(1);
+
+  const [imageSrc, setImageSrc] = useState(null);
+  const [crop, setCrop] = useState({ x: 0, y: 0 });
+  const [zoom, setZoom] = useState(1);
+  const [croppedAreaPixels, setCroppedAreaPixels] = useState(null);
+  const [showCropper, setShowCropper] = useState(false);
+
+  const STYLE_PRESETS = {
+    'Balanceado':  { str: 4, spd: 3, res: 3, pts: 0 },
+    'Agresivo':    { str: 5, spd: 3, res: 2, pts: 0 },
+    'Defensivo':   { str: 2, spd: 3, res: 5, pts: 0 },
+    'Velocista':   { str: 2, spd: 5, res: 3, pts: 0 },
+  };
+  const STYLES = Object.keys(STYLE_PRESETS);
+
+  const applyStyle = (s) => {
+    setStyle(s);
+    const preset = STYLE_PRESETS[s];
+    setStats({ str: preset.str, spd: preset.spd, res: preset.res });
+    setPoints(preset.pts);
+  };
+
+  const handleFile = (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+        setImageSrc(ev.target.result);
+        setShowCropper(true);
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const handleCropComplete = async () => {
+    try {
+      const croppedImage = await getCroppedImg(imageSrc, croppedAreaPixels);
+      setFace(croppedImage);
+      setShowCropper(false);
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  const updateStat = (name, val) => {
+    if (val > 0 && points <= 0) return;
+    if (val < 0 && stats[name] <= 1) return;
+    
+    setStats(prev => ({ ...prev, [name]: prev[name] + val }));
+    setPoints(prev => prev - val);
+  };
+
+  return (
+    <div className="screen min-h-screen p-2 md:p-4 bg-gradient-to-br from-neutral-900 to-black overflow-y-auto">
+      
+      {/* Header */}
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-4 md:mb-6 w-full max-w-6xl mx-auto mt-4 animate-fade-in-up">
+          <button onClick={onBack} className="bg-neutral-800 hover:bg-neutral-700 text-white px-4 py-2 text-xl md:text-2xl font-['Bebas_Neue'] tracking-wider rounded border border-neutral-600 transition-colors w-fit shadow-md">
+            ← VOLVER
+          </button>
+          <h2 className="text-4xl md:text-6xl text-red-500 m-0 font-['Bebas_Neue'] tracking-widest text-center md:text-right drop-shadow-[0_0_15px_rgba(255,60,60,0.8)]">
+            SELECCIONA TU LUCHADOR
+          </h2>
+      </div>
+      
+      {/* VS BANNER (M-7) */}
+      {opponentInfo && (
+        <div className="w-full max-w-6xl mx-auto mb-6 flex items-center justify-center gap-4 md:gap-10 animate-fade-in">
+          <div className="flex flex-col items-center">
+             <div className="w-16 h-16 md:w-20 md:h-20 bg-neutral-800 rounded-full border-2 border-red-500 overflow-hidden shadow-[0_0_15px_rgba(255,0,0,0.4)]">
+                {playerData?.face ? (
+                  <img src={playerData.face} alt="Tú" className="w-full h-full object-cover" />
+                ) : (
+                  <div className="w-full h-full flex items-center justify-center text-white font-['Bebas_Neue'] text-2xl">YOU</div>
+                )}
+             </div>
+             <span className="text-white font-['Bebas_Neue'] text-sm md:text-lg tracking-widest mt-1">TÚ</span>
+          </div>
+
+          <div className="flex flex-col items-center">
+            <div className="text-red-500 font-['Bebas_Neue'] text-4xl md:text-6xl italic animate-pulse drop-shadow-[0_0_10px_rgba(255,0,0,0.8)]">VS</div>
+          </div>
+
+          <div className="flex flex-col items-center">
+             <div className="w-16 h-16 md:w-20 md:h-20 bg-neutral-800 rounded-full border-2 border-neutral-600 overflow-hidden shadow-[0_0_15px_rgba(255,255,255,0.2)]">
+                {opponentInfo.face ? (
+                  <img src={opponentInfo.face} alt={opponentInfo.name} className="w-full h-full object-cover" />
+                ) : (
+                  <div className="w-full h-full flex items-center justify-center text-white font-['Bebas_Neue'] text-2xl">?</div>
+                )}
+             </div>
+             <span className="text-neutral-400 font-['Bebas_Neue'] text-sm md:text-lg tracking-widest mt-1">{(opponentInfo.name || 'OPONENTE').toUpperCase()}</span>
+          </div>
+        </div>
+      )}
+
+      <div className="flex flex-col lg:flex-row gap-4 md:gap-6 w-full max-w-6xl mx-auto flex-1 min-h-0 pb-10 animate-fade-in-up" style={{ animationDelay: '0.1s' }}>
+        
+        {/* LEFT: CHARACTER GRID & STATS */}
+        <div className={`flex-1 flex flex-col gap-4 md:gap-6 bg-neutral-950/80 backdrop-blur-md border border-neutral-800 p-4 md:p-6 rounded-lg shadow-2xl overflow-y-auto ${mobileStep === 1 ? 'flex' : 'hidden lg:flex'}`}>
+          
+          <div>
+            <h3 className="text-xl md:text-2xl text-red-500 mb-3 tracking-widest font-['Bebas_Neue']">ELIGE TU BASE</h3>
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 md:gap-4">
+                {CHARACTERS.map(char => (
+                <div 
+                    key={char.id}
+                    onClick={() => setSelectedChar(char)}
+                    className={`relative aspect-[2/3] bg-neutral-900 border-2 cursor-pointer overflow-hidden group transition-all duration-300 rounded-md
+                      ${selectedChar.id === char.id ? 'border-red-500 shadow-[0_0_20px_rgba(255,60,60,0.6)] scale-105 z-10' : 'border-neutral-700 hover:border-red-400 hover:scale-[1.02]'}`}
+                >
+                    <img 
+                      src={encodeURI(char.portrait)} 
+                      alt={char.name}
+                      className="w-full h-full object-cover opacity-80 group-hover:opacity-100 transition-opacity"
+                    />
+                    <div className="absolute bottom-0 w-full bg-red-600/90 text-white text-sm md:text-base font-['Bebas_Neue'] tracking-wider text-center py-1">
+                      {char.name}
+                    </div>
+                </div>
+                ))}
+            </div>
+          </div>
+
+          <div className="bg-black/40 p-4 rounded border border-neutral-800/50">
+            <h3 className="text-xl md:text-2xl text-red-500 mb-3 tracking-widest font-['Bebas_Neue']">
+              ESTADÍSTICAS <span className="text-white ml-2">({points} PTS RESTANTES)</span>
+            </h3>
+            {Object.entries({str: 'Fuerza', spd: 'Velocidad', res: 'Resistencia'}).map(([key, label]) => (
+                <div key={key} className="flex items-center justify-between mb-3 bg-neutral-900/50 p-2 rounded">
+                    <span className="text-lg md:text-xl font-['Bebas_Neue'] tracking-wide text-neutral-300">{label}</span>
+                    <div className="flex items-center gap-3 md:gap-4">
+                        <button className="bg-neutral-800 hover:bg-red-600 text-white w-8 h-8 md:w-10 md:h-10 flex items-center justify-center text-xl md:text-2xl font-bold rounded transition-colors active:scale-95" onClick={() => updateStat(key, -1)}>-</button>
+                        <span className="w-6 text-center font-bold text-red-500 text-2xl md:text-3xl font-['Bebas_Neue']">{stats[key]}</span>
+                        <button className="bg-neutral-800 hover:bg-green-600 text-white w-8 h-8 md:w-10 md:h-10 flex items-center justify-center text-xl md:text-2xl font-bold rounded transition-colors active:scale-95" onClick={() => updateStat(key, 1)}>+</button>
+                    </div>
+                </div>
+            ))}
+          </div>
+
+          <div className="bg-black/40 p-4 rounded border border-neutral-800/50">
+            <h3 className="text-xl md:text-2xl text-red-500 mb-3 tracking-widest font-['Bebas_Neue']">ESTILO DE PELEA</h3>
+            <div className="grid grid-cols-2 gap-2 md:gap-3">
+                {STYLES.map(s => (
+                    <button 
+                        key={s}
+                        onClick={() => applyStyle(s)}
+                        className={`py-2 px-1 text-lg md:text-xl font-['Bebas_Neue'] tracking-wider rounded border transition-all duration-200 
+                          ${style === s ? 'bg-red-600 border-red-500 text-white shadow-[0_0_15px_rgba(255,0,0,0.4)] scale-[1.02]' : 'bg-neutral-900 border-neutral-700 text-neutral-400 hover:text-white hover:border-neutral-500'}`}
+                    >
+                        {s.toUpperCase()}
+                    </button>
+                ))}
+            </div>
+          </div>
+          <button 
+            className="lg:hidden mt-2 w-full py-3 text-2xl font-['Bebas_Neue'] tracking-widest bg-red-600 hover:bg-red-500 text-white rounded transition-colors shadow-lg" 
+            onClick={() => setMobileStep(2)}
+          >
+            SIGUIENTE: FOTO Y VISTA PREVIA
+          </button>
+        </div>
+
+        {/* RIGHT: PREVIEW & START */}
+        <div className={`flex-1 flex flex-col bg-neutral-950/80 backdrop-blur-md border border-neutral-800 p-4 md:p-6 rounded-lg shadow-2xl ${mobileStep === 2 ? 'flex' : 'hidden lg:flex'}`}>
+          <button 
+            className="lg:hidden mb-4 py-2 text-xl font-['Bebas_Neue'] tracking-widest bg-neutral-800 text-white rounded border border-neutral-600" 
+            onClick={() => setMobileStep(1)}
+          >
+            ← VOLVER A SELECCIÓN
+          </button>
+          
+          <div className="mb-4 border-b-2 border-red-600 pb-2">
+            <div className="text-2xl md:text-3xl font-['Bebas_Neue'] tracking-widest text-red-500">
+              JUGADOR: <span className="text-white">{playerData?.name || 'JUGADOR 1'}</span>
+            </div>
+          </div>
+
+          <div className="relative flex-1 bg-black border border-neutral-800 rounded-md overflow-hidden flex items-center justify-center min-h-[300px] shadow-inner group">
+            <div className="absolute inset-0 bg-gradient-to-t from-red-900/20 to-transparent pointer-events-none z-0"></div>
+            
+            <div className="absolute inset-0 transition-transform duration-500 lg:scale-100 scale-[1.7]" style={{ transformOrigin: `${selectedChar.headPos.left} ${selectedChar.headPos.top}` }}>
+                <img 
+                    src={encodeURI(selectedChar.portrait)} 
+                    alt={selectedChar.name}
+                    className="w-full h-full object-contain md:object-cover opacity-90 group-hover:scale-105 transition-transform duration-700"
+                />
+                
+                {face && (
+                <div 
+                    className="absolute transform -translate-x-1/2 -translate-y-1/2 z-10 border-2 border-red-500 rounded-full shadow-[0_0_20px_rgba(0,0,0,0.8)] overflow-hidden" 
+                    style={{ 
+                        top: selectedChar.headPos.top,
+                        left: selectedChar.headPos.left,
+                        width: '24%',
+                        aspectRatio: '1/1'
+                    }}
+                >
+                    <img src={face} alt="Rostro" className="w-full h-full object-cover" />
+                </div>
+                )}
+            </div>
+            
+            <div className="absolute bottom-4 right-4 bg-red-600 px-4 py-1 text-xl md:text-3xl font-['Bebas_Neue'] tracking-widest text-white shadow-lg border border-red-400 z-20">
+              {selectedChar.name}
+            </div>
+          </div>
+
+          <div 
+            className="mt-4 border-2 border-dashed border-neutral-600 hover:border-red-500 bg-neutral-900/50 hover:bg-red-900/10 p-4 rounded text-center cursor-pointer transition-all duration-300 flex flex-col items-center justify-center gap-2 group" 
+            onClick={() => document.getElementById('face-input').click()}
+          >
+            <span className="text-2xl text-neutral-500 group-hover:text-red-400 transition-colors">📷</span>
+            <p className="text-sm md:text-base font-['Bebas_Neue'] tracking-widest text-neutral-400 group-hover:text-white transition-colors">SUBIR FOTO DE PERFIL (REQUERIDA)</p>
+            <input type="file" id="face-input" hidden accept="image/*" onChange={handleFile} />
+          </div>
+
+          <button 
+            onClick={() => onReady(face, { ...selectedChar, stats, style })} 
+            disabled={points > 0 || !face}
+            className={`mt-4 w-full py-4 text-2xl md:text-4xl font-['Bebas_Neue'] tracking-widest rounded transition-all duration-300 relative overflow-hidden group
+              ${points > 0 || !face ? 'bg-neutral-800 text-neutral-500 cursor-not-allowed' : 'bg-gradient-to-r from-red-700 to-red-900 text-white border border-red-500 hover:scale-[1.02] active:scale-95 shadow-[0_0_20px_rgba(255,0,0,0.3)] hover:shadow-[0_0_40px_rgba(255,0,0,0.6)]'}`}
+          >
+            <span className="relative z-10">{points > 0 ? `GASTA ${points} PTS MÁS` : !face ? 'SUBE TU FOTO PARA PELEAR' : '¡CONFIRMAR Y PELEAR!'}</span>
+            {points === 0 && face && (
+              <div className="absolute inset-0 bg-gradient-to-r from-red-500 to-orange-500 opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
+            )}
+            {points === 0 && face && (
+              <span className="absolute z-10 inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity duration-300">¡CONFIRMAR Y PELEAR!</span>
+            )}
+          </button>
+        </div>
+
+      </div>
+
+      {/* CROPPER MODAL */}
+      {showCropper && (
+        <div className="fixed inset-0 z-[100] bg-black/95 backdrop-blur-sm flex flex-col items-center justify-center p-4 animate-fade-in-up">
+          <div className="relative w-full max-w-md aspect-square bg-neutral-900 rounded-lg overflow-hidden border-2 border-red-500 shadow-[0_0_30px_rgba(255,0,0,0.3)]">
+            <Cropper
+              image={imageSrc}
+              crop={crop}
+              zoom={zoom}
+              aspect={1}
+              cropShape="round"
+              onCropChange={setCrop}
+              onZoomChange={setZoom}
+              onCropComplete={(croppedArea, croppedAreaPixels) => setCroppedAreaPixels(croppedAreaPixels)}
+            />
+          </div>
+          <div className="mt-6 flex gap-4 w-full max-w-md">
+             <button onClick={() => setShowCropper(false)} className="flex-1 px-6 py-3 bg-neutral-800 hover:bg-neutral-700 text-white font-['Bebas_Neue'] text-2xl tracking-widest rounded border border-neutral-600 transition-colors">
+               CANCELAR
+             </button>
+             <button onClick={handleCropComplete} className="flex-1 px-6 py-3 bg-red-600 hover:bg-red-500 text-white font-['Bebas_Neue'] text-2xl tracking-widest rounded border border-red-400 shadow-[0_0_15px_rgba(255,60,60,0.5)] transition-colors">
+               CONFIRMAR
+             </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+export default CharacterSelect;
