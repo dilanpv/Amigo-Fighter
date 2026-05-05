@@ -33,25 +33,25 @@ const CHARACTERS = [
   { 
     id: 'ninja', 
     name: 'EL NINJA', 
-    img: '/assets/El Ninja.png',
+    img: '/assets/EL NINJA.png',
     portrait: '/assets/El_Ninja_seleccion-removebg-preview.png',
-    cols: 12, rows: 4, 
-    fWidth: 115, fHeight: 188,
+    cols: 11, rows: 4, 
+    fWidth: 128, fHeight: 192,
     headPos: { top: '18%', left: '48%' } 
   },
   { 
     id: 'campeon', 
     name: 'EL CAMPEÓN', 
-    img: '/assets/El Campeón.png', 
+    img: '/assets/EL CAMPEÓN.png', 
     portrait: '/assets/El_Campeón_seleccion-removebg-preview.png',
-    cols: 12, rows: 4, 
-    fWidth: 115, fHeight: 188,
+    cols: 11, rows: 4, 
+    fWidth: 128, fHeight: 192,
     headPos: { top: '17%', left: '50%' } 
   },
   { 
     id: 'agresivo', 
     name: 'EL AGRESIVO', 
-    img: '/assets/El Agresivo.png', 
+    img: '/assets/EL AGRESIVO.png', 
     portrait: '/assets/El_Agresivo_seleccion-removebg-preview.png',
     cols: 11, rows: 4, 
     fWidth: 128, fHeight: 192,
@@ -60,7 +60,7 @@ const CHARACTERS = [
   { 
     id: 'luchador', 
     name: 'LUCHADOR', 
-    img: '/assets/Luchador.png', 
+    img: '/assets/LUCHADOR.png', 
     portrait: '/assets/Luchador_seleccion-removebg-preview.png',
     cols: 11, rows: 4, 
     fWidth: 128, fHeight: 192,

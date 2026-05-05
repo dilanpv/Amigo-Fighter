@@ -19,7 +19,7 @@ export default class FighterGame extends Phaser.Scene {
         
         // Character specs & Stats
         this.charSpec = this.playerData.character || { 
-            fWidth: 128, fHeight: 192, img: '/assets/Luchador.png', cols: 11,
+            fWidth: 128, fHeight: 192, img: '/assets/LUCHADOR.png', cols: 11,
             stats: { str: 3, spd: 3, res: 3 }, style: 'Balanceado'
         };
         this.stats = this.charSpec.stats;
@@ -28,7 +28,7 @@ export default class FighterGame extends Phaser.Scene {
     preload() {
         this.gameState.players.forEach(p => {
             const spec = p.character || this.charSpec;
-            this.load.spritesheet(`fighter_${p.id}`, encodeURI(spec.img || '/assets/Luchador.png'), {
+            this.load.spritesheet(`fighter_${p.id}`, encodeURI(spec.img || '/assets/LUCHADOR.png'), {
                 frameWidth: spec.fWidth || 128,
                 frameHeight: spec.fHeight || 192
             });
@@ -38,7 +38,7 @@ export default class FighterGame extends Phaser.Scene {
             }
         });
         
-        this.load.spritesheet('fighter_CPU', '/assets/Luchador.png', { frameWidth: 128, frameHeight: 192 });
+        this.load.spritesheet('fighter_CPU', encodeURI('/assets/LUCHADOR.png'), { frameWidth: 128, frameHeight: 192 });
     }
 
     create() {
