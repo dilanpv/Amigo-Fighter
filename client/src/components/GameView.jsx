@@ -1,11 +1,14 @@
 import React, { useEffect, useRef, useState } from 'react';
 import * as Phaser from 'phaser';
 import FighterGame from '../game/FighterGame';
+import SoundManager from '../game/SoundManager';
 import { socket } from '../socket';
 
 function GameView({ roomId, playerData, gameState, onEnd }) {
   const containerRef = useRef(null);
   const gameRef = useRef(null);
+  const soundRef = useRef(null); // N-4: SoundManager instance
+  const [isMuted, setIsMuted] = useState(false); // N-4: mute state
   const [hp, setHp] = useState({ p1: 100, p2: 100 });
   const [delayedHp, setDelayedHp] = useState({ p1: 100, p2: 100 });
   const [timeLeft, setTimeLeft] = useState(60);
@@ -22,6 +25,7 @@ function GameView({ roomId, playerData, gameState, onEnd }) {
   const [isPaused, setIsPaused] = useState(false);
   const [showRoundAnnounce, setShowRoundAnnounce] = useState(false); // M-1
   const [showTutorial, setShowTutorial] = useState(false); // M-6
+  const [rematchStatus, setRematchStatus] = useState(null); // N-6: null | 'waiting' | 'requested' | 'declined'
   const roundEndingRef = useRef(false);
   const roundAnnounceRef = useRef(null);
 
@@ -84,11 +88,54 @@ function GameView({ roomId, playerData, gameState, onEnd }) {
           if (hp.p1 > 0) {
               // Si el oponente se fue, forzamos la victoria del jugador local
               setMatchWinnerId(playerData.id);
+              // N-7: Auto-report win in tournament matches when opponent disconnects
+              if (roomId && roomId.startsWith('T-')) {
+                  setTimeout(() => onEnd(playerData.id), 2000);
+              }
           }
       };
       socket.on('opponent_left_match', handleOpponentLeft);
       return () => socket.off('opponent_left_match', handleOpponentLeft);
-  }, [hp.p1, playerData.id]);
+  }, [hp.p1, playerData.id, roomId]);
+
+  // N-6: Rematch socket listeners
+  useEffect(() => {
+    const onRematchRequested = () => {
+      // Opponent wants a rematch
+      if (rematchStatus === 'waiting') {
+        // We already requested too — this means both want it, server will emit rematch_accepted
+      } else {
+        setRematchStatus('requested');
+      }
+    };
+    const onRematchAccepted = () => {
+      // Both players agreed — reset everything
+      setRematchStatus(null);
+      setRound(1);
+      setWins({ p1: 0, p2: 0 });
+      setMatchWinnerId(null);
+      setHp({ p1: 100, p2: 100 });
+      setDelayedHp({ p1: 100, p2: 100 });
+      setTimeLeft(60);
+      roundEndingRef.current = false;
+      if (gameRef.current) {
+        gameRef.current.events.emit('resetRound');
+      }
+      triggerRoundAnnounce();
+    };
+    const onRematchDeclined = () => {
+      setRematchStatus('declined');
+    };
+
+    socket.on('rematch_requested', onRematchRequested);
+    socket.on('rematch_accepted', onRematchAccepted);
+    socket.on('rematch_declined', onRematchDeclined);
+    return () => {
+      socket.off('rematch_requested', onRematchRequested);
+      socket.off('rematch_accepted', onRematchAccepted);
+      socket.off('rematch_declined', onRematchDeclined);
+    };
+  }, [rematchStatus]);
 
   useEffect(() => {
     if (timeLeft !== 0 || hp.p1 <= 0 || hp.p2 <= 0) return;
@@ -106,6 +153,12 @@ function GameView({ roomId, playerData, gameState, onEnd }) {
 
   useEffect(() => {
     if (!gameRef.current) {
+      // N-4: Initialize SoundManager (must be triggered by user interaction context)
+      if (!soundRef.current) {
+        soundRef.current = new SoundManager();
+        soundRef.current.init();
+      }
+
       const config = {
         type: Phaser.AUTO,
         parent: containerRef.current,
@@ -123,7 +176,8 @@ function GameView({ roomId, playerData, gameState, onEnd }) {
       };
 
       const game = new Phaser.Game(config);
-      game.scene.start('FighterGame', { socket, roomId, playerData, gameState });
+      // N-4: Pass soundManager instance to Phaser scene
+      game.scene.start('FighterGame', { socket, roomId, playerData, gameState, soundManager: soundRef.current });
       // M-1: Show round announce when game starts
       triggerRoundAnnounce();
       
@@ -145,7 +199,8 @@ function GameView({ roomId, playerData, gameState, onEnd }) {
                 const nextWins = { ...w, [winnerKey]: w[winnerKey] + 1 };
 
                 if (nextWins.p1 >= 2 || nextWins.p2 >= 2) {
-                    const wId = nextWins.p1 >= 2 ? playerData.id : 'CPU';
+                    // N-1 fix: en multijugador p2 es el oponente real, no 'CPU'
+                    const wId = nextWins.p1 >= 2 ? playerData.id : (opponent?.id || 'CPU');
                     setMatchWinnerId(wId);
                 } else {
                     setTimeout(() => {
@@ -177,6 +232,11 @@ function GameView({ roomId, playerData, gameState, onEnd }) {
         gameRef.current.destroy(true);
         gameRef.current = null;
       }
+      // N-4: Destroy sound manager with game
+      if (soundRef.current) {
+        soundRef.current.destroy();
+        soundRef.current = null;
+      }
     };
   }, [roomId, playerData, gameState]);
 
@@ -187,23 +247,22 @@ function GameView({ roomId, playerData, gameState, onEnd }) {
       <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-red-900/20 via-black to-black opacity-80 z-0"></div>
 
       {/* HUD OVERLAY */}
-      <div className="w-full px-2 md:px-6 py-2 flex justify-between items-start md:items-center z-20 flex-shrink-0 bg-gradient-to-b from-black/80 to-transparent">
+      <div className="w-full px-1 md:px-6 py-1 md:py-2 flex justify-between items-center z-20 flex-shrink-0 bg-gradient-to-b from-black/80 to-transparent">
 
-        {/* P1 STATUS */}
-        <div className="w-[38%] md:w-[40%] max-w-[420px]">
-          <div className="flex flex-col md:flex-row items-start md:items-center gap-2">
-            <div className="w-12 h-12 md:w-16 md:h-16 border-2 border-white bg-black overflow-hidden shadow-[0_0_15px_rgba(255,255,255,0.3)] flex-shrink-0 rounded-full mx-auto md:mx-0">
+        <div className="w-[30%] md:w-[40%] max-w-[420px]">
+          <div className="flex flex-row items-center gap-1 md:gap-2">
+            <div className="w-7 h-7 md:w-16 md:h-16 border border-white md:border-2 bg-black overflow-hidden shadow-[0_0_15px_rgba(255,255,255,0.3)] flex-shrink-0 rounded-full">
               {playerData.face ? <img src={playerData.face} className="w-full h-full object-cover" alt="Player 1" /> : <div className="w-full h-full bg-blue-900" />}
             </div>
             <div className="flex-1 w-full min-w-0">
-              <div className="font-['Bebas_Neue'] text-sm md:text-xl mb-1 truncate text-white text-center md:text-left tracking-wider">{playerData.name}</div>
-              <div className="relative overflow-hidden border-2 border-neutral-700 h-4 md:h-6 bg-black w-full rounded shadow-inner">
+              <div className="font-['Bebas_Neue'] text-[10px] md:text-xl mb-0 md:mb-1 truncate text-white tracking-wider">{playerData.name}</div>
+              <div className="relative overflow-hidden border border-neutral-700 md:border-2 h-2 md:h-6 bg-black w-full rounded shadow-inner">
                 <div className="absolute top-0 bottom-0 left-0 bg-red-700 transition-all duration-500" style={{ width: `${delayedHp.p1}%` }}></div>
                 <div className="absolute top-0 bottom-0 left-0 bg-green-500 shadow-[0_0_15px_#22c55e] transition-all duration-150" style={{ width: `${hp.p1}%` }}></div>
               </div>
-              <div className="flex gap-1 mt-2 justify-center md:justify-start">
+              <div className="hidden md:flex gap-1 mt-1 justify-start">
                 {[...Array(2)].map((_, i) => (
-                    <div key={i} className={`w-3 h-3 md:w-4 md:h-4 rounded-full border border-neutral-600 ${i < wins.p1 ? 'bg-green-500 shadow-[0_0_10px_#22c55e]' : 'bg-black'}`} />
+                    <div key={i} className={`w-2.5 h-2.5 md:w-4 md:h-4 rounded-full border border-neutral-600 ${i < wins.p1 ? 'bg-green-500 shadow-[0_0_10px_#22c55e]' : 'bg-black'}`} />
                 ))}
               </div>
             </div>
@@ -211,27 +270,55 @@ function GameView({ roomId, playerData, gameState, onEnd }) {
         </div>
 
         {/* TIMER CENTER */}
-        <div className="flex flex-col items-center gap-1 md:gap-2 px-1 flex-shrink-0 z-30 mt-2 md:mt-0">
-            <div className="flex items-center gap-2 md:gap-4">
+        <div className="flex flex-col items-center gap-0 md:gap-2 px-0.5 md:px-1 flex-shrink-0 z-30">
+            {/* N-13: Emotes row visible on desktop too */}
+            <div className="hidden md:flex gap-1 mb-1 opacity-40 hover:opacity-100 transition-opacity duration-300">
+              {['👊', '🔥', '😂', '💀', '👑'].map(emoji => (
+                <button
+                  key={emoji}
+                  onPointerDown={(e) => {
+                    e.preventDefault();
+                    if (gameRef.current) gameRef.current.events.emit('triggerEmote', emoji);
+                  }}
+                  className="w-8 h-8 bg-neutral-900/90 border border-neutral-700 rounded-lg flex items-center justify-center text-sm hover:bg-neutral-800 active:scale-90 transition-all shadow-md"
+                >{emoji}</button>
+              ))}
+            </div>
+            <div className="flex items-center gap-1 md:gap-4">
               <button
                 onClick={() => onEnd(null)}
-                className="px-2 py-1 md:px-4 md:py-2 bg-neutral-900/80 text-white font-['Bebas_Neue'] text-xs md:text-lg tracking-widest border border-neutral-600 rounded shadow-[0_0_10px_rgba(0,0,0,0.5)] hover:bg-neutral-800 transition-all hover:scale-105 hover:border-red-500"
+                className="px-1.5 py-0.5 md:px-4 md:py-2 bg-neutral-900/80 text-white font-['Bebas_Neue'] text-[10px] md:text-lg tracking-widest border border-neutral-600 rounded shadow-[0_0_10px_rgba(0,0,0,0.5)] hover:bg-neutral-800 transition-all hover:scale-105 hover:border-red-500"
               >SALIR</button>
 
               <button
                 onClick={handleFullscreen}
-                className="md:hidden px-2 py-1 bg-neutral-900/80 text-white font-['Bebas_Neue'] text-xs tracking-widest border border-neutral-600 rounded shadow-[0_0_10px_rgba(0,0,0,0.5)] hover:bg-neutral-800"
+                className="md:hidden px-1.5 py-0.5 bg-neutral-900/80 text-white font-['Bebas_Neue'] text-[10px] tracking-widest border border-neutral-600 rounded shadow-[0_0_10px_rgba(0,0,0,0.5)] hover:bg-neutral-800"
               >🖵</button>
 
-              <div className="flex flex-col items-center mx-1 bg-black/50 p-2 border border-neutral-800 rounded">
-                  <div className="font-['Bebas_Neue'] text-[10px] md:text-sm text-red-500 tracking-widest">RONDA {round}</div>
-                  <div className={`font-['Bebas_Neue'] text-3xl md:text-5xl leading-none transition-all duration-300
+              <div className="flex flex-col items-center mx-0.5 md:mx-1 bg-black/50 p-1 md:p-2 border border-neutral-800 rounded">
+                  <div className="font-['Bebas_Neue'] text-[8px] md:text-sm text-red-500 tracking-widest">RONDA {round}</div>
+                  <div className={`font-['Bebas_Neue'] text-2xl md:text-5xl leading-none transition-all duration-300
                     ${timeLeft <= 10 && timeLeft > 0 && hp.p1 > 0 && hp.p2 > 0
                       ? 'text-orange-400 animate-pulse drop-shadow-[0_0_15px_rgba(251,146,60,0.9)] scale-110'
                       : 'text-white drop-shadow-[0_0_10px_rgba(255,255,255,0.5)]'}`}>
                     {hp.p1 <= 0 || hp.p2 <= 0 ? 'KO' : timeLeft}
                   </div>
               </div>
+
+              {/* N-4: Mute button */}
+              <button
+                onClick={() => {
+                  if (soundRef.current) {
+                    const newMuted = !isMuted;
+                    setIsMuted(newMuted);
+                    soundRef.current.setMute(newMuted);
+                  }
+                }}
+                title={isMuted ? 'Activar sonido' : 'Silenciar'}
+                className="px-1.5 py-0.5 md:px-3 md:py-2 bg-neutral-900/80 text-white font-['Bebas_Neue'] text-xs md:text-base tracking-widest border border-neutral-600 rounded shadow-[0_0_10px_rgba(0,0,0,0.5)] hover:bg-neutral-800 transition-all hover:scale-105 hover:border-yellow-500"
+              >
+                {isMuted ? '🔇' : '🔊'}
+              </button>
 
 
               <button
@@ -247,26 +334,25 @@ function GameView({ roomId, playerData, gameState, onEnd }) {
                         }
                     }
                 }}
-                className="px-2 py-1 md:px-4 md:py-2 bg-neutral-900/80 text-white font-['Bebas_Neue'] text-xs md:text-lg tracking-widest border border-neutral-600 rounded shadow-[0_0_10px_rgba(0,0,0,0.5)] hover:bg-neutral-800 transition-all hover:scale-105 hover:border-yellow-500"
+                className="px-1.5 py-0.5 md:px-4 md:py-2 bg-neutral-900/80 text-white font-['Bebas_Neue'] text-[10px] md:text-lg tracking-widest border border-neutral-600 rounded shadow-[0_0_10px_rgba(0,0,0,0.5)] hover:bg-neutral-800 transition-all hover:scale-105 hover:border-yellow-500"
               >PAUSA</button>
             </div>
         </div>
 
-        {/* P2 STATUS */}
-        <div className="w-[38%] md:w-[40%] max-w-[420px]">
-          <div className="flex flex-col md:flex-row-reverse items-end md:items-center gap-2 text-right">
-            <div className="w-12 h-12 md:w-16 md:h-16 border-2 border-red-500 bg-black overflow-hidden shadow-[0_0_15px_#ff3c3c] flex-shrink-0 rounded-full mx-auto md:mx-0">
+        <div className="w-[30%] md:w-[40%] max-w-[420px]">
+          <div className="flex flex-row-reverse items-center gap-1 md:gap-2 text-right">
+            <div className="w-7 h-7 md:w-16 md:h-16 border border-red-500 md:border-2 bg-black overflow-hidden shadow-[0_0_15px_#ff3c3c] flex-shrink-0 rounded-full">
               {opponent?.face ? <img src={opponent.face} className="w-full h-full object-cover" alt="Player 2" /> : <div className="w-full h-full bg-red-900" />}
             </div>
             <div className="flex-1 w-full min-w-0">
-              <div className="font-['Bebas_Neue'] text-sm md:text-xl mb-1 truncate text-white text-center md:text-right tracking-wider">{opponent?.name || 'RETADOR'}</div>
-              <div className="relative overflow-hidden border-2 border-neutral-700 h-4 md:h-6 bg-black w-full rounded shadow-inner">
+              <div className="font-['Bebas_Neue'] text-[10px] md:text-xl mb-0 md:mb-1 truncate text-white text-right tracking-wider">{opponent?.name || 'RETADOR'}</div>
+              <div className="relative overflow-hidden border border-neutral-700 md:border-2 h-2 md:h-6 bg-black w-full rounded shadow-inner">
                 <div className="absolute top-0 bottom-0 right-0 bg-neutral-600 transition-all duration-500" style={{ width: `${delayedHp.p2}%` }}></div>
                 <div className="absolute top-0 bottom-0 right-0 bg-red-500 shadow-[0_0_15px_#ef4444] transition-all duration-150" style={{ width: `${hp.p2}%` }}></div>
               </div>
-              <div className="flex flex-row-reverse gap-1 mt-2 justify-center md:justify-start">
+              <div className="hidden md:flex flex-row-reverse gap-1 mt-1 justify-start">
                 {[...Array(2)].map((_, i) => (
-                    <div key={i} className={`w-3 h-3 md:w-4 md:h-4 rounded-full border border-neutral-600 ${i < wins.p2 ? 'bg-red-500 shadow-[0_0_10px_#ef4444]' : 'bg-black'}`} />
+                    <div key={i} className={`w-2.5 h-2.5 md:w-4 md:h-4 rounded-full border border-neutral-600 ${i < wins.p2 ? 'bg-red-500 shadow-[0_0_10px_#ef4444]' : 'bg-black'}`} />
                 ))}
               </div>
             </div>
@@ -276,8 +362,8 @@ function GameView({ roomId, playerData, gameState, onEnd }) {
       </div>
 
       {/* PHASER CONTAINER */}
-      <div className="relative flex-1 w-full overflow-hidden flex items-center justify-center z-10 p-2 md:p-0">
-        <div id="phaser-parent" ref={containerRef} className="w-full h-full max-w-[1200px] max-h-[800px] rounded-lg overflow-hidden border border-neutral-800 shadow-2xl" />
+      <div className="relative flex-1 w-full overflow-hidden flex items-center justify-center z-10 p-0 md:p-0">
+        <div id="phaser-parent" ref={containerRef} className="w-full h-full md:max-w-[1200px] md:max-h-[800px] md:rounded-lg overflow-hidden md:border md:border-neutral-800 shadow-2xl" />
 
         {/* M-1: ROUND ANNOUNCE OVERLAY */}
         {showRoundAnnounce && (
@@ -297,7 +383,7 @@ function GameView({ roomId, playerData, gameState, onEnd }) {
         {/* KO OVERLAY */}
         {(hp.p1 <= 0 || hp.p2 <= 0) && !matchWinnerId && (
           <div className="absolute inset-0 z-50 bg-black/80 flex items-center justify-center backdrop-blur-sm">
-            <h2 className="font-['Bebas_Neue'] text-[20vw] md:text-[15vw] text-red-600 italic animate-pulse drop-shadow-[0_0_30px_#dc2626]">K.O.</h2>
+            <h2 className="font-['Bebas_Neue'] text-[15vw] md:text-[10vw] text-red-600 italic animate-pulse drop-shadow-[0_0_30px_#dc2626]" style={{ maxWidth: '400px' }}>K.O.</h2>
           </div>
         )}
 
@@ -305,37 +391,82 @@ function GameView({ roomId, playerData, gameState, onEnd }) {
         {/* MATCH OVER OVERLAY */}
         {matchWinnerId && (
           <div className="absolute inset-0 z-50 bg-black/90 flex items-center justify-center backdrop-blur-md">
-            <div className="text-center p-8 bg-neutral-900/50 border border-neutral-700 rounded-xl shadow-2xl">
+            <div className="text-center p-8 bg-neutral-900/50 border border-neutral-700 rounded-xl shadow-2xl max-w-md w-[90%]">
               <h2 className="font-['Bebas_Neue'] text-5xl md:text-8xl italic mb-2 tracking-widest drop-shadow-[0_0_20px_rgba(255,255,255,0.5)] text-white">
                 {matchWinnerId === playerData.id ? '¡GANASTE!' : 'PERDISTE'}
               </h2>
-              <p className="font-['Bebas_Neue'] text-2xl md:text-4xl text-neutral-500 mb-8 tracking-[0.3em]">FIN DEL COMBATE</p>
+              <p className="font-['Bebas_Neue'] text-2xl md:text-4xl text-neutral-500 mb-6 tracking-[0.3em]">FIN DEL COMBATE</p>
+
+              {/* N-6: Rematch status message */}
+              {rematchStatus === 'waiting' && (
+                <p className="font-['Bebas_Neue'] text-lg text-yellow-400 tracking-widest mb-4 animate-pulse">
+                  ⏳ ESPERANDO AL RIVAL...
+                </p>
+              )}
+              {rematchStatus === 'requested' && (
+                <p className="font-['Bebas_Neue'] text-lg text-green-400 tracking-widest mb-4 animate-pulse">
+                  🥊 ¡TU RIVAL QUIERE REVANCHA!
+                </p>
+              )}
+              {rematchStatus === 'declined' && (
+                <p className="font-['Bebas_Neue'] text-lg text-red-400 tracking-widest mb-4">
+                  ❌ EL RIVAL RECHAZÓ LA REVANCHA
+                </p>
+              )}
+
               <div className="flex flex-col sm:flex-row gap-4 justify-center">
+                {/* REVANCHA BUTTON — only for non-tournament */}
+                {!roomId?.startsWith('T-') && (
+                  <button 
+                    onClick={() => {
+                        if (gameState.players.length === 1) {
+                            // CPU mode: reset locally
+                            setRematchStatus(null);
+                            setRound(1);
+                            setWins({p1: 0, p2: 0});
+                            setMatchWinnerId(null);
+                            setHp({p1: 100, p2: 100});
+                            setDelayedHp({p1: 100, p2: 100});
+                            setTimeLeft(60);
+                            roundEndingRef.current = false;
+                            if (gameRef.current) {
+                                gameRef.current.events.emit('resetRound');
+                            }
+                            triggerRoundAnnounce();
+                        } else {
+                            // N-6: Multiplayer — send rematch request to server
+                            socket.emit('request_rematch', { roomId });
+                            setRematchStatus('waiting');
+                        }
+                    }}
+                    disabled={rematchStatus === 'waiting' || rematchStatus === 'declined'}
+                    className={`px-8 py-4 font-['Bebas_Neue'] text-2xl md:text-3xl tracking-widest rounded-lg transition-all active:scale-95
+                      ${rematchStatus === 'waiting' 
+                        ? 'bg-yellow-700 text-yellow-200 cursor-wait shadow-[0_0_20px_rgba(234,179,8,0.3)]'
+                        : rematchStatus === 'requested'
+                          ? 'bg-green-600 text-white hover:bg-green-500 shadow-[0_0_20px_rgba(34,197,94,0.5)] hover:scale-105 animate-pulse'
+                          : rematchStatus === 'declined'
+                            ? 'bg-neutral-800 text-neutral-500 cursor-not-allowed'
+                            : 'bg-red-600 text-white hover:bg-red-500 shadow-[0_0_20px_#dc2626] hover:scale-105'
+                      }`}
+                  >
+                    {rematchStatus === 'waiting' 
+                      ? '⏳ ESPERANDO...'
+                      : rematchStatus === 'requested'
+                        ? '✅ ACEPTAR REVANCHA'
+                        : rematchStatus === 'declined'
+                          ? 'RECHAZADA'
+                          : 'REVANCHA'}
+                  </button>
+                )}
                 <button 
                   onClick={() => {
-                      if (gameState.players.length === 1) {
-                          // CPU mode: reset locally
-                          setRound(1);
-                          setWins({p1: 0, p2: 0});
-                          setMatchWinnerId(null);
-                          setHp({p1: 100, p2: 100});
-                          setDelayedHp({p1: 100, p2: 100});
-                          setTimeLeft(60);
-                          roundEndingRef.current = false;
-                          if (gameRef.current) {
-                              gameRef.current.events.emit('resetRound');
-                          }
-                      } else {
-                          // Multiplayer: exit cleanly so App.jsx handles the flow
-                          onEnd(null);
-                      }
+                    // N-6: If we're leaving while opponent is waiting for rematch, decline
+                    if (rematchStatus === 'requested' && gameState.players.length > 1) {
+                      socket.emit('decline_rematch', { roomId });
+                    }
+                    onEnd(matchWinnerId);
                   }} 
-                  className="px-8 py-4 bg-red-600 text-white font-['Bebas_Neue'] text-2xl md:text-3xl tracking-widest rounded-lg shadow-[0_0_20px_#dc2626] hover:bg-red-500 transition-all hover:scale-105 active:scale-95"
-                >
-                  REVANCHA
-                </button>
-                <button 
-                  onClick={() => onEnd(matchWinnerId)} 
                   className="px-8 py-4 bg-neutral-800 text-white font-['Bebas_Neue'] text-2xl md:text-3xl tracking-widest border border-neutral-600 rounded-lg hover:bg-neutral-700 transition-all hover:scale-105 active:scale-95"
                 >
                   SALIR
@@ -347,84 +478,87 @@ function GameView({ roomId, playerData, gameState, onEnd }) {
       </div>
 
         {/* MOBILE CONTROLS */}
-        <div className="md:hidden absolute bottom-2 left-2 right-2 flex justify-between items-end z-40 pointer-events-none mb-4">
+        <div className="md:hidden absolute bottom-0 left-1 right-1 flex justify-between items-end z-40 pointer-events-none pb-1" style={{ paddingBottom: 'max(4px, env(safe-area-inset-bottom))' }}>
             {/* D-PAD */}
-            <div className="flex flex-col items-center gap-1 pointer-events-auto opacity-60">
+            <div className="flex flex-col items-center gap-0.5 pointer-events-auto opacity-50 active:opacity-80">
                 <button 
                     onPointerDown={(e) => { e.preventDefault(); triggerKey(38, true); }}
                     onPointerUp={(e) => { e.preventDefault(); triggerKey(38, false); }}
                     onPointerOut={(e) => { e.preventDefault(); triggerKey(38, false); }}
-                    className="w-12 h-12 bg-neutral-800/80 border-2 border-neutral-600 rounded-t-xl text-white font-bold active:bg-red-600 active:scale-95 transition-all shadow-lg text-xl"
+                    className="w-10 h-10 bg-neutral-800/80 border-2 border-neutral-600 rounded-t-xl text-white font-bold active:bg-red-600 active:scale-95 transition-all shadow-lg text-lg"
                 >▲</button>
-                <div className="flex gap-1">
+                <div className="flex gap-0.5">
                     <button 
                         onPointerDown={(e) => { e.preventDefault(); triggerKey(37, true); }}
                         onPointerUp={(e) => { e.preventDefault(); triggerKey(37, false); }}
                         onPointerOut={(e) => { e.preventDefault(); triggerKey(37, false); }}
-                        className="w-12 h-12 bg-neutral-800/80 border-2 border-neutral-600 rounded-l-xl text-white font-bold active:bg-red-600 active:scale-95 transition-all shadow-lg text-xl"
+                        className="w-10 h-10 bg-neutral-800/80 border-2 border-neutral-600 rounded-l-xl text-white font-bold active:bg-red-600 active:scale-95 transition-all shadow-lg text-lg"
                     >◄</button>
                     <button 
                         onPointerDown={(e) => { e.preventDefault(); triggerKey(40, true); }}
                         onPointerUp={(e) => { e.preventDefault(); triggerKey(40, false); }}
                         onPointerOut={(e) => { e.preventDefault(); triggerKey(40, false); }}
-                        className="w-12 h-12 bg-neutral-800/80 border-2 border-neutral-600 rounded-b-xl text-white font-bold active:bg-red-600 active:scale-95 transition-all shadow-lg text-xl"
+                        className="w-10 h-10 bg-neutral-800/80 border-2 border-neutral-600 rounded-b-xl text-white font-bold active:bg-red-600 active:scale-95 transition-all shadow-lg text-lg"
                     >▼</button>
                     <button 
                         onPointerDown={(e) => { e.preventDefault(); triggerKey(39, true); }}
                         onPointerUp={(e) => { e.preventDefault(); triggerKey(39, false); }}
                         onPointerOut={(e) => { e.preventDefault(); triggerKey(39, false); }}
-                        className="w-12 h-12 bg-neutral-800/80 border-2 border-neutral-600 rounded-r-xl text-white font-bold active:bg-red-600 active:scale-95 transition-all shadow-lg text-xl"
+                        className="w-10 h-10 bg-neutral-800/80 border-2 border-neutral-600 rounded-r-xl text-white font-bold active:bg-red-600 active:scale-95 transition-all shadow-lg text-lg"
                     >►</button>
                 </div>
             </div>
 
-            {/* EMOTE BUTTONS (L-4) */}
-            <div className="flex gap-2 justify-end mb-2 mr-2 opacity-40 hover:opacity-100 transition-opacity pointer-events-auto">
-                {['👊', '🔥', '😂', '💀', '👑'].map(emoji => (
-                    <button 
-                        key={emoji}
-                        onPointerDown={(e) => {
-                            e.preventDefault();
-                            if (gameRef.current) {
-                                gameRef.current.events.emit('triggerEmote', emoji);
-                            }
-                        }}
-                        className="w-10 h-10 md:w-12 md:h-12 bg-neutral-900/90 border border-neutral-700 rounded-lg flex items-center justify-center text-xl md:text-2xl hover:bg-neutral-800 active:scale-90 transition-all shadow-lg"
-                    >
-                        {emoji}
-                    </button>
-                ))}
-            </div>
-
-            {/* ACTION BUTTONS */}
-            <div className="flex flex-col gap-2 pointer-events-auto opacity-60 mr-2">
-                <div className="flex gap-2 justify-end">
-                    <button 
-                        onPointerDown={(e) => { e.preventDefault(); triggerKey(87, true); }}
-                        onPointerUp={(e) => { e.preventDefault(); triggerKey(87, false); }}
-                        onPointerOut={(e) => { e.preventDefault(); triggerKey(87, false); }}
-                        className="w-14 h-14 bg-purple-600/90 border-2 border-purple-400 rounded-full text-white font-['Bebas_Neue'] text-lg active:bg-purple-500 active:scale-95 transition-all shadow-[0_0_15px_rgba(147,51,234,0.5)]"
-                    >ESP</button>
-                    <button 
-                        onPointerDown={(e) => { e.preventDefault(); triggerKey(68, true); }}
-                        onPointerUp={(e) => { e.preventDefault(); triggerKey(68, false); }}
-                        onPointerOut={(e) => { e.preventDefault(); triggerKey(68, false); }}
-                        className="w-14 h-14 bg-blue-600/90 border-2 border-blue-400 rounded-full text-white font-['Bebas_Neue'] text-lg active:bg-blue-500 active:scale-95 transition-all shadow-[0_0_15px_rgba(37,99,235,0.5)]"
-                    >PAT</button>
+            {/* RIGHT SIDE: EMOTES + ACTION BUTTONS */}
+            <div className="flex flex-col items-end gap-1 pointer-events-auto">
+                {/* EMOTE BUTTONS */}
+                <div className="flex gap-1.5 justify-end mr-1 opacity-40 hover:opacity-100 transition-opacity">
+                    {['👊', '🔥', '😂', '💀', '👑'].map(emoji => (
+                        <button 
+                            key={emoji}
+                            onPointerDown={(e) => {
+                                e.preventDefault();
+                                if (gameRef.current) {
+                                    gameRef.current.events.emit('triggerEmote', emoji);
+                                }
+                            }}
+                            className="w-8 h-8 bg-neutral-900/90 border border-neutral-700 rounded-lg flex items-center justify-center text-base hover:bg-neutral-800 active:scale-90 transition-all shadow-lg"
+                        >
+                            {emoji}
+                        </button>
+                    ))}
                 </div>
-                <div className="flex gap-2 justify-end mr-6">
-                    <button 
-                        onPointerDown={(e) => { e.preventDefault(); triggerKey(65, true); }}
-                        onPointerUp={(e) => { e.preventDefault(); triggerKey(65, false); }}
-                        onPointerOut={(e) => { e.preventDefault(); triggerKey(65, false); }}
-                        className="w-14 h-14 bg-green-600/90 border-2 border-green-400 rounded-full text-white font-['Bebas_Neue'] text-lg active:bg-green-500 active:scale-95 transition-all shadow-[0_0_15px_rgba(34,197,94,0.5)]"
-                    >JAB</button>
-                    <button 
-                        onPointerDown={(e) => { e.preventDefault(); triggerKey(83, true); }}
-                        onPointerUp={(e) => { e.preventDefault(); triggerKey(83, false); }}
-                        onPointerOut={(e) => { e.preventDefault(); triggerKey(83, false); }}
-                        className="w-14 h-14 bg-red-600/90 border-2 border-red-400 rounded-full text-white font-['Bebas_Neue'] text-lg active:bg-red-500 active:scale-95 transition-all shadow-[0_0_15px_rgba(220,38,38,0.5)]"
-                    >GAN</button>
+
+                {/* ACTION BUTTONS */}
+                <div className="flex flex-col gap-1.5 opacity-60 mr-1">
+                    <div className="flex gap-1.5 justify-end">
+                        <button 
+                            onPointerDown={(e) => { e.preventDefault(); triggerKey(87, true); }}
+                            onPointerUp={(e) => { e.preventDefault(); triggerKey(87, false); }}
+                            onPointerOut={(e) => { e.preventDefault(); triggerKey(87, false); }}
+                            className="w-12 h-12 bg-purple-600/90 border-2 border-purple-400 rounded-full text-white font-['Bebas_Neue'] text-sm active:bg-purple-500 active:scale-95 transition-all shadow-[0_0_15px_rgba(147,51,234,0.5)]"
+                        >ESP</button>
+                        <button 
+                            onPointerDown={(e) => { e.preventDefault(); triggerKey(68, true); }}
+                            onPointerUp={(e) => { e.preventDefault(); triggerKey(68, false); }}
+                            onPointerOut={(e) => { e.preventDefault(); triggerKey(68, false); }}
+                            className="w-12 h-12 bg-blue-600/90 border-2 border-blue-400 rounded-full text-white font-['Bebas_Neue'] text-sm active:bg-blue-500 active:scale-95 transition-all shadow-[0_0_15px_rgba(37,99,235,0.5)]"
+                        >PAT</button>
+                    </div>
+                    <div className="flex gap-1.5 justify-end mr-5">
+                        <button 
+                            onPointerDown={(e) => { e.preventDefault(); triggerKey(65, true); }}
+                            onPointerUp={(e) => { e.preventDefault(); triggerKey(65, false); }}
+                            onPointerOut={(e) => { e.preventDefault(); triggerKey(65, false); }}
+                            className="w-12 h-12 bg-green-600/90 border-2 border-green-400 rounded-full text-white font-['Bebas_Neue'] text-sm active:bg-green-500 active:scale-95 transition-all shadow-[0_0_15px_rgba(34,197,94,0.5)]"
+                        >JAB</button>
+                        <button 
+                            onPointerDown={(e) => { e.preventDefault(); triggerKey(83, true); }}
+                            onPointerUp={(e) => { e.preventDefault(); triggerKey(83, false); }}
+                            onPointerOut={(e) => { e.preventDefault(); triggerKey(83, false); }}
+                            className="w-12 h-12 bg-red-600/90 border-2 border-red-400 rounded-full text-white font-['Bebas_Neue'] text-sm active:bg-red-500 active:scale-95 transition-all shadow-[0_0_15px_rgba(220,38,38,0.5)]"
+                        >GAN</button>
+                    </div>
                 </div>
             </div>
         </div>

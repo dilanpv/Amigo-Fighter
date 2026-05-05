@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 
-function Lobby({ onJoin }) {
+function Lobby({ onJoin, sessionStats }) {
   const [name, setName] = useState('');
   const [room, setRoom] = useState('');
 
@@ -22,8 +22,8 @@ function Lobby({ onJoin }) {
     <div className="screen min-h-screen flex items-center justify-center p-4">
       <div className="w-full max-w-md flex flex-col items-center animate-fade-in-up">
         {/* LOGO */}
-        <h1 className="text-6xl md:text-8xl font-bold tracking-widest text-center mb-8 drop-shadow-[0_0_15px_rgba(255,60,60,0.8)] transition-transform hover:scale-105 duration-300 cursor-default leading-none">
-          <span className="text-white">AMIGO</span><br/>
+        <h1 className="text-4xl md:text-7xl font-bold tracking-widest text-center mb-4 md:mb-8 drop-shadow-[0_0_15px_rgba(255,60,60,0.8)] transition-transform hover:scale-105 duration-300 cursor-default leading-tight">
+          <span className="text-white">AMIGO</span>{' '}
           <span className="text-red-500">FIGHTER</span>
         </h1>
 
@@ -112,6 +112,26 @@ function Lobby({ onJoin }) {
           <div className="w-2 h-2 rounded-full bg-red-500 animate-ping"></div>
           INSERTA UNA MONEDA PARA EMPEZAR
         </div>
+
+        {/* N-16: Session Stats */}
+        {sessionStats && sessionStats.fights > 0 && (
+          <div className="mt-4 flex gap-4 items-center justify-center bg-neutral-950/80 border border-neutral-800 px-6 py-3 rounded-lg shadow-inner animate-fade-in-up">
+            <div className="flex flex-col items-center">
+              <span className="font-['Bebas_Neue'] text-2xl text-white">{sessionStats.fights}</span>
+              <span className="text-[10px] text-neutral-500 tracking-widest font-['Bebas_Neue']">COMBATES</span>
+            </div>
+            <div className="w-px h-8 bg-neutral-700"></div>
+            <div className="flex flex-col items-center">
+              <span className="font-['Bebas_Neue'] text-2xl text-green-400 drop-shadow-[0_0_6px_rgba(74,222,128,0.5)]">{sessionStats.wins}</span>
+              <span className="text-[10px] text-neutral-500 tracking-widest font-['Bebas_Neue']">VICTORIAS</span>
+            </div>
+            <div className="w-px h-8 bg-neutral-700"></div>
+            <div className="flex flex-col items-center">
+              <span className="font-['Bebas_Neue'] text-2xl text-red-400 drop-shadow-[0_0_6px_rgba(239,68,68,0.5)]">{sessionStats.kos}</span>
+              <span className="text-[10px] text-neutral-500 tracking-widest font-['Bebas_Neue']">K.O.s</span>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

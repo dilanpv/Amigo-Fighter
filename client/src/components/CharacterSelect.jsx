@@ -37,7 +37,7 @@ const CHARACTERS = [
     portrait: '/assets/El_Ninja_seleccion-removebg-preview.png',
     cols: 12, rows: 4, 
     fWidth: 115, fHeight: 188,
-    headPos: { top: '15%', left: '50%' } 
+    headPos: { top: '18%', left: '48%' } 
   },
   { 
     id: 'campeon', 
@@ -46,7 +46,7 @@ const CHARACTERS = [
     portrait: '/assets/El_Campeón_seleccion-removebg-preview.png',
     cols: 12, rows: 4, 
     fWidth: 115, fHeight: 188,
-    headPos: { top: '14%', left: '50%' } 
+    headPos: { top: '17%', left: '50%' } 
   },
   { 
     id: 'agresivo', 
@@ -55,7 +55,7 @@ const CHARACTERS = [
     portrait: '/assets/El_Agresivo_seleccion-removebg-preview.png',
     cols: 11, rows: 4, 
     fWidth: 128, fHeight: 192,
-    headPos: { top: '12%', left: '50%' } 
+    headPos: { top: '15%', left: '48%' } 
   },
   { 
     id: 'luchador', 
@@ -64,13 +64,20 @@ const CHARACTERS = [
     portrait: '/assets/Luchador_seleccion-removebg-preview.png',
     cols: 11, rows: 4, 
     fWidth: 128, fHeight: 192,
-    headPos: { top: '16%', left: '50%' } 
+    headPos: { top: '18%', left: '46%' } 
   },
 ];
 
+// N-5/N-14: Generate random Dicebear avatar as default face so photo is optional
+const getRandomDicebearFace = () => {
+  const seed = Math.random().toString(36).substring(2, 10);
+  return `https://api.dicebear.com/7.x/pixel-art/svg?seed=${seed}`;
+};
+
 function CharacterSelect({ playerData, opponentInfo, onReady, onBack }) {
   const [selectedChar, setSelectedChar] = useState(CHARACTERS[0]);
-  const [face, setFace] = useState(null);
+  const [face, setFace] = useState(() => getRandomDicebearFace()); // N-5: default random avatar
+  const [hasCustomFace, setHasCustomFace] = useState(false); // track if user uploaded custom
   const [stats, setStats] = useState({ str: 4, spd: 3, res: 3 });
   const [style, setStyle] = useState('Balanceado');
   const [points, setPoints] = useState(0);
@@ -112,6 +119,7 @@ function CharacterSelect({ playerData, opponentInfo, onReady, onBack }) {
     try {
       const croppedImage = await getCroppedImg(imageSrc, croppedAreaPixels);
       setFace(croppedImage);
+      setHasCustomFace(true); // N-5: mark as custom
       setShowCropper(false);
     } catch (e) {
       console.error(e);
@@ -177,12 +185,12 @@ function CharacterSelect({ playerData, opponentInfo, onReady, onBack }) {
           
           <div>
             <h3 className="text-xl md:text-2xl text-red-500 mb-3 tracking-widest font-['Bebas_Neue']">ELIGE TU BASE</h3>
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 md:gap-4">
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 md:gap-4">
                 {CHARACTERS.map(char => (
                 <div 
                     key={char.id}
                     onClick={() => setSelectedChar(char)}
-                    className={`relative aspect-[2/3] bg-neutral-900 border-2 cursor-pointer overflow-hidden group transition-all duration-300 rounded-md
+                    className={`relative aspect-[3/4] md:aspect-[2/3] bg-neutral-900 border-2 cursor-pointer overflow-hidden group transition-all duration-300 rounded-md
                       ${selectedChar.id === char.id ? 'border-red-500 shadow-[0_0_20px_rgba(255,60,60,0.6)] scale-105 z-10' : 'border-neutral-700 hover:border-red-400 hover:scale-[1.02]'}`}
                 >
                     <img 
@@ -190,7 +198,7 @@ function CharacterSelect({ playerData, opponentInfo, onReady, onBack }) {
                       alt={char.name}
                       className="w-full h-full object-cover opacity-80 group-hover:opacity-100 transition-opacity"
                     />
-                    <div className="absolute bottom-0 w-full bg-red-600/90 text-white text-sm md:text-base font-['Bebas_Neue'] tracking-wider text-center py-1">
+                    <div className="absolute bottom-0 w-full bg-red-600/90 text-white text-xs md:text-base font-['Bebas_Neue'] tracking-wider text-center py-0.5 md:py-1">
                       {char.name}
                     </div>
                 </div>
@@ -252,10 +260,10 @@ function CharacterSelect({ playerData, opponentInfo, onReady, onBack }) {
             </div>
           </div>
 
-          <div className="relative flex-1 bg-black border border-neutral-800 rounded-md overflow-hidden flex items-center justify-center min-h-[300px] shadow-inner group">
+          <div className="relative flex-1 bg-black border border-neutral-800 rounded-md overflow-hidden flex items-center justify-center min-h-[200px] md:min-h-[300px] shadow-inner group">
             <div className="absolute inset-0 bg-gradient-to-t from-red-900/20 to-transparent pointer-events-none z-0"></div>
             
-            <div className="absolute inset-0 transition-transform duration-500 lg:scale-100 scale-[1.7]" style={{ transformOrigin: `${selectedChar.headPos.left} ${selectedChar.headPos.top}` }}>
+            <div className="absolute inset-0 transition-transform duration-500 scale-[1.1] lg:scale-100" style={{ transformOrigin: `${selectedChar.headPos.left} ${selectedChar.headPos.top}` }}>
                 <img 
                     src={encodeURI(selectedChar.portrait)} 
                     alt={selectedChar.name}
@@ -268,7 +276,7 @@ function CharacterSelect({ playerData, opponentInfo, onReady, onBack }) {
                     style={{ 
                         top: selectedChar.headPos.top,
                         left: selectedChar.headPos.left,
-                        width: '24%',
+                        width: '16%',
                         aspectRatio: '1/1'
                     }}
                 >
@@ -277,31 +285,50 @@ function CharacterSelect({ playerData, opponentInfo, onReady, onBack }) {
                 )}
             </div>
             
-            <div className="absolute bottom-4 right-4 bg-red-600 px-4 py-1 text-xl md:text-3xl font-['Bebas_Neue'] tracking-widest text-white shadow-lg border border-red-400 z-20">
+            <div className="absolute bottom-2 right-2 md:bottom-4 md:right-4 bg-red-600 px-3 py-0.5 md:px-4 md:py-1 text-base md:text-3xl font-['Bebas_Neue'] tracking-widest text-white shadow-lg border border-red-400 z-20">
               {selectedChar.name}
             </div>
           </div>
 
-          <div 
-            className="mt-4 border-2 border-dashed border-neutral-600 hover:border-red-500 bg-neutral-900/50 hover:bg-red-900/10 p-4 rounded text-center cursor-pointer transition-all duration-300 flex flex-col items-center justify-center gap-2 group" 
-            onClick={() => document.getElementById('face-input').click()}
-          >
-            <span className="text-2xl text-neutral-500 group-hover:text-red-400 transition-colors">📷</span>
-            <p className="text-sm md:text-base font-['Bebas_Neue'] tracking-widest text-neutral-400 group-hover:text-white transition-colors">SUBIR FOTO DE PERFIL (REQUERIDA)</p>
-            <input type="file" id="face-input" hidden accept="image/*" onChange={handleFile} />
+          {/* N-5: Show current avatar preview and allow upload - photo is optional */}
+          <div className="mt-4 flex flex-col gap-2">
+            <div className="flex items-center gap-3 bg-neutral-900/50 border border-neutral-800 rounded p-3">
+              <div className="w-12 h-12 rounded-full border-2 border-red-500 overflow-hidden flex-shrink-0 shadow-[0_0_10px_rgba(255,0,0,0.3)]">
+                {face && <img src={face} alt="Avatar" className="w-full h-full object-cover" />}
+              </div>
+              <div className="flex flex-col flex-1 min-w-0">
+                <span className="font-['Bebas_Neue'] text-sm text-neutral-400 tracking-widest">
+                  {hasCustomFace ? '✅ FOTO PROPIA' : '🎲 AVATAR ALEATORIO'}
+                </span>
+                <span className="text-xs text-neutral-600">Opcional — puedes subir tu propia foto</span>
+              </div>
+              <button
+                onClick={() => { setFace(getRandomDicebearFace()); setHasCustomFace(false); }}
+                className="text-xs font-['Bebas_Neue'] tracking-wider text-neutral-500 hover:text-white border border-neutral-700 hover:border-neutral-500 px-2 py-1 rounded transition-colors"
+              >🎲</button>
+            </div>
+            <div 
+              className="border-2 border-dashed border-neutral-700 hover:border-red-500 bg-neutral-900/30 hover:bg-red-900/10 p-3 rounded text-center cursor-pointer transition-all duration-300 flex items-center justify-center gap-3 group" 
+              onClick={() => document.getElementById('face-input').click()}
+            >
+              <span className="text-xl text-neutral-500 group-hover:text-red-400 transition-colors">📷</span>
+              <p className="text-sm font-['Bebas_Neue'] tracking-widest text-neutral-400 group-hover:text-white transition-colors">SUBIR FOTO DE PERFIL (OPCIONAL)</p>
+              <input type="file" id="face-input" hidden accept="image/*" onChange={handleFile} />
+            </div>
           </div>
 
+          {/* N-5: Button no longer requires photo - only points must be 0 */}
           <button 
             onClick={() => onReady(face, { ...selectedChar, stats, style })} 
-            disabled={points > 0 || !face}
+            disabled={points > 0}
             className={`mt-4 w-full py-4 text-2xl md:text-4xl font-['Bebas_Neue'] tracking-widest rounded transition-all duration-300 relative overflow-hidden group
-              ${points > 0 || !face ? 'bg-neutral-800 text-neutral-500 cursor-not-allowed' : 'bg-gradient-to-r from-red-700 to-red-900 text-white border border-red-500 hover:scale-[1.02] active:scale-95 shadow-[0_0_20px_rgba(255,0,0,0.3)] hover:shadow-[0_0_40px_rgba(255,0,0,0.6)]'}`}
+              ${points > 0 ? 'bg-neutral-800 text-neutral-500 cursor-not-allowed' : 'bg-gradient-to-r from-red-700 to-red-900 text-white border border-red-500 hover:scale-[1.02] active:scale-95 shadow-[0_0_20px_rgba(255,0,0,0.3)] hover:shadow-[0_0_40px_rgba(255,0,0,0.6)]'}`}
           >
-            <span className="relative z-10">{points > 0 ? `GASTA ${points} PTS MÁS` : !face ? 'SUBE TU FOTO PARA PELEAR' : '¡CONFIRMAR Y PELEAR!'}</span>
-            {points === 0 && face && (
+            <span className="relative z-10">{points > 0 ? `GASTA ${points} PTS MÁS` : '¡CONFIRMAR Y PELEAR!'}</span>
+            {points === 0 && (
               <div className="absolute inset-0 bg-gradient-to-r from-red-500 to-orange-500 opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
             )}
-            {points === 0 && face && (
+            {points === 0 && (
               <span className="absolute z-10 inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity duration-300">¡CONFIRMAR Y PELEAR!</span>
             )}
           </button>

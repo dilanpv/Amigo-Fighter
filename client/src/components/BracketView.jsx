@@ -26,7 +26,7 @@ function BracketView({ matches, round, countdown, onCountdownTick }) {
       <div className="animate-fade-in-up flex flex-col items-center w-full max-w-5xl">
 
         {/* Title */}
-        <h1 className="text-5xl md:text-7xl font-['Bebas_Neue'] tracking-widest text-center mb-2 drop-shadow-[0_0_20px_rgba(255,60,60,0.9)] text-white">
+        <h1 className="text-3xl md:text-7xl font-['Bebas_Neue'] tracking-widest text-center mb-2 drop-shadow-[0_0_20px_rgba(255,60,60,0.9)] text-white">
           LLAVES <span className="text-red-500">RONDA {round}</span>
         </h1>
 
@@ -53,7 +53,7 @@ function BracketView({ matches, round, countdown, onCountdownTick }) {
         )}
 
         {/* Match Cards */}
-        <div className="w-full grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5 p-2 max-h-[55vh] overflow-y-auto">
+        <div className="w-full grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 md:gap-5 p-1 md:p-2 max-h-[55vh] overflow-y-auto">
           {matches.map((m, i) => (
             <div
               key={i}
@@ -75,9 +75,9 @@ function BracketView({ matches, round, countdown, onCountdownTick }) {
                 </div>
               )}
 
-              <div className="pl-5 pr-4 py-4 flex flex-col gap-2">
+              <div className="pl-4 pr-3 py-3 md:pl-5 md:pr-4 md:py-4 flex flex-col gap-1.5 md:gap-2">
                 {/* Match ID */}
-                <div className="text-[10px] text-neutral-600 tracking-[0.2em] font-bold mb-1">
+                <div className="text-[9px] md:text-[10px] text-neutral-600 tracking-[0.2em] font-bold mb-0.5 md:mb-1">
                   COMBATE #{i + 1}
                 </div>
 
@@ -89,9 +89,9 @@ function BracketView({ matches, round, countdown, onCountdownTick }) {
                 >
                   <div className="flex items-center gap-3">
                     {m.p1?.face && (
-                      <img src={m.p1.face} alt={m.p1.name} className="w-8 h-8 rounded-full border border-neutral-600 object-cover" />
+                      <img src={m.p1.face} alt={m.p1.name} className="w-6 h-6 md:w-8 md:h-8 rounded-full border border-neutral-600 object-cover" />
                     )}
-                    <span className="text-lg md:text-xl font-['Bebas_Neue'] tracking-wider text-white truncate max-w-[130px]">
+                    <span className="text-base md:text-xl font-['Bebas_Neue'] tracking-wider text-white truncate max-w-[100px] md:max-w-[130px]">
                       {m.p1?.name || '??'}
                     </span>
                   </div>
@@ -116,9 +116,9 @@ function BracketView({ matches, round, countdown, onCountdownTick }) {
                 >
                   <div className="flex items-center gap-3">
                     {m.p2?.face && (
-                      <img src={m.p2.face} alt={m.p2.name} className="w-8 h-8 rounded-full border border-neutral-600 object-cover" />
+                      <img src={m.p2.face} alt={m.p2.name} className="w-6 h-6 md:w-8 md:h-8 rounded-full border border-neutral-600 object-cover" />
                     )}
-                    <span className="text-lg md:text-xl font-['Bebas_Neue'] tracking-wider text-white truncate max-w-[130px]">
+                    <span className="text-base md:text-xl font-['Bebas_Neue'] tracking-wider text-white truncate max-w-[100px] md:max-w-[130px]">
                       {m.p2?.name || (m.bye ? '— BYE —' : '??')}
                     </span>
                   </div>

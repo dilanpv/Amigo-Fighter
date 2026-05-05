@@ -17,18 +17,18 @@ function TournamentResults({ winner, onFinish }) {
       <div className={`absolute top-1/4 left-1/2 -translate-x-1/2 -translate-y-1/2 w-96 h-96 bg-yellow-500/20 blur-[100px] rounded-full transition-opacity duration-1000 ${showPodium ? 'opacity-100' : 'opacity-0'}`}></div>
 
       <div className="z-10 w-full max-w-4xl flex flex-col items-center animate-fade-in-up">
-        <h1 className="text-4xl md:text-6xl text-white mb-2 font-['Bebas_Neue'] tracking-[0.2em] drop-shadow-[0_0_10px_rgba(255,255,255,0.5)]">
+        <h1 className="text-3xl md:text-6xl text-white mb-2 font-['Bebas_Neue'] tracking-[0.2em] drop-shadow-[0_0_10px_rgba(255,255,255,0.5)]">
           CAMPEÓN DEL TORNEO
         </h1>
 
         <div className={`mt-8 mb-12 flex flex-col items-center transition-all duration-1000 transform ${showPodium ? 'scale-100 translate-y-0 opacity-100' : 'scale-50 translate-y-20 opacity-0'}`}>
           <div className="relative mb-6 group">
             {/* Crown icon/indicator */}
-            <div className="absolute -top-12 left-1/2 -translate-x-1/2 text-5xl md:text-6xl drop-shadow-[0_0_15px_rgba(234,179,8,0.8)] animate-bounce">
+            <div className="absolute -top-10 md:-top-12 left-1/2 -translate-x-1/2 text-4xl md:text-5xl drop-shadow-[0_0_15px_rgba(234,179,8,0.8)] animate-bounce">
               👑
             </div>
             
-            <div className="w-40 h-40 md:w-56 md:h-56 bg-black rounded-full border-4 border-yellow-400 overflow-hidden shadow-[0_0_50px_rgba(234,179,8,0.6)] relative z-10 group-hover:scale-105 transition-transform duration-500">
+            <div className="w-28 h-28 md:w-44 md:h-44 bg-black rounded-full border-4 border-yellow-400 overflow-hidden shadow-[0_0_50px_rgba(234,179,8,0.6)] relative z-10 group-hover:scale-105 transition-transform duration-500">
               {winner?.face ? (
                 <img src={winner.face} alt={winner.name} className="w-full h-full object-cover" />
               ) : (
@@ -39,10 +39,10 @@ function TournamentResults({ winner, onFinish }) {
             </div>
           </div>
 
-          <h2 className="text-6xl md:text-8xl text-yellow-400 font-['Bebas_Neue'] tracking-widest drop-shadow-[0_0_20px_rgba(234,179,8,0.8)]">
+          <h2 className="text-4xl md:text-7xl text-yellow-400 font-['Bebas_Neue'] tracking-widest drop-shadow-[0_0_20px_rgba(234,179,8,0.8)]">
             {winner?.name || 'DESCONOCIDO'}
           </h2>
-          <p className="mt-4 text-neutral-400 font-['Bebas_Neue'] text-xl md:text-2xl tracking-[0.3em] animate-pulse">
+          <p className="mt-3 text-neutral-400 font-['Bebas_Neue'] text-base md:text-2xl tracking-[0.3em] animate-pulse">
             ¡LA LEYENDA SE HA FORJADO!
           </p>
         </div>

@@ -193,7 +193,8 @@ io.on('connection', (socket) => {
                     name: playerName
                 });
             }
-            io.emit('tournament_info', tournament);
+            const { timeout: _t, ...safeT } = tournament;
+            io.emit('tournament_info', safeT);
             io.emit('available_tournaments', getAvailableTournaments());
         }
     });
@@ -206,7 +207,8 @@ io.on('connection', (socket) => {
             t.players = t.players.filter(p => p.id !== socket.id);
             if (t.players.length !== prevCount) {
                 io.to(t.id).emit('tournament_players_update', t.players);
-                io.emit('tournament_info', t);
+                const { timeout: _t2, ...safeT2 } = t;
+                io.emit('tournament_info', safeT2);
                 io.emit('available_tournaments', getAvailableTournaments());
             }
         }
@@ -312,6 +314,40 @@ io.on('connection', (socket) => {
     socket.on('player_emote', (data) => {
         const { roomId, emote } = data;
         socket.to(roomId).emit('opponent_emote', { id: socket.id, emote });
+    });
+
+    // N-6: Rematch system for non-tournament matches
+    socket.on('request_rematch', (data) => {
+        const { roomId } = data;
+        const room = rooms.get(roomId);
+        if (!room) return;
+
+        // Initialize rematch tracking if not present
+        if (!room.rematchRequests) room.rematchRequests = new Set();
+        room.rematchRequests.add(socket.id);
+
+        // Notify opponent that rematch was requested
+        socket.to(roomId).emit('rematch_requested', { by: socket.id });
+
+        // If both players requested rematch, accept
+        const roomPlayerIds = room.players.map(p => p.id);
+        const allRequested = roomPlayerIds.every(pid => room.rematchRequests.has(pid));
+        if (room.players.length === 2 && allRequested) {
+            // Reset room state for new match
+            room.rematchRequests = new Set();
+            room.players.forEach(p => { p.ready = false; });
+            io.to(roomId).emit('rematch_accepted');
+            console.log(`Rematch accepted in room ${roomId}`);
+        }
+    });
+
+    socket.on('decline_rematch', (data) => {
+        const { roomId } = data;
+        const room = rooms.get(roomId);
+        if (room) {
+            room.rematchRequests = new Set();
+            socket.to(roomId).emit('rematch_declined');
+        }
     });
 
     socket.on('leave_match', (data) => {

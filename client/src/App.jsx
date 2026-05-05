@@ -22,12 +22,27 @@ function App() {
   const [opponentInfo, setOpponentInfo] = useState(null); // M-5: opponent data for loading screen
   const [cpuDifficulty, setCpuDifficulty] = useState('normal'); // H-3: CPU difficulty
   const [tournamentWinner, setTournamentWinner] = useState(null); // H-4: Store winner for podium
+  const [loadingMsgIdx, setLoadingMsgIdx] = useState(0); // N-9: rotating loading message index
+  const [sessionStats, setSessionStats] = useState({ fights: 0, wins: 0, kos: 0 }); // N-16: session stats
   
   // Refs to always access fresh state inside socket callbacks
   const playerDataRef = React.useRef(playerData);
   const roomIdRef = React.useRef(roomId);
   React.useEffect(() => { playerDataRef.current = playerData; }, [playerData]);
   React.useEffect(() => { roomIdRef.current = roomId; }, [roomId]);
+
+  // N-9: Rotate loading messages reactively
+  const LOADING_MSGS = [
+    'ORGANIZANDO EL RING...', 'PELEADORES CALENTANDO...', 'PREPARANDO EL COMBATE...', 'LUCHADORES LISTOS...'
+  ];
+  useEffect(() => {
+    if (screen !== 'loading') return;
+    setLoadingMsgIdx(0);
+    const timer = setInterval(() => {
+      setLoadingMsgIdx(prev => (prev + 1) % LOADING_MSGS.length);
+    }, 2500);
+    return () => clearInterval(timer);
+  }, [screen]);
 
   useEffect(() => {
     // ✅ Empty dependency array: listeners are registered ONCE and never lost
@@ -160,6 +175,13 @@ function App() {
   };
 
   const handleGameEnd = (winnerId) => {
+    // N-16: Track session stats
+    setSessionStats(prev => ({
+      fights: prev.fights + 1,
+      wins: winnerId && winnerId === playerData?.id ? prev.wins + 1 : prev.wins,
+      kos: winnerId ? prev.kos + 1 : prev.kos,
+    }));
+
     if (roomId.startsWith('T-')) {
         // Tournament match — report win if there's a winner, then return to bracket
         if (winnerId) socket.emit('report_win', { roomId, winnerId });
@@ -171,10 +193,6 @@ function App() {
     }
   };
 
-  const LOADING_MSGS = [
-    'ORGANIZANDO EL RING...', 'PELEADORES CALENTANDO...', 'PREPARANDO EL COMBATE...', 'LUCHADORES LISTOS...'
-  ];
-
   const handleLeaveTournamentLobby = () => {
     socket.emit('leave_tournament', { tournamentId: roomId });
     setScreen('tournament_hub');
@@ -182,7 +200,7 @@ function App() {
 
   return (
     <div className="min-h-screen bg-black">
-      {screen === 'lobby' && <Lobby onJoin={handleJoinRoom} />}
+      {screen === 'lobby' && <Lobby onJoin={handleJoinRoom} sessionStats={sessionStats} />}
       {screen === 'tournament_hub' && (
         <TournamentHub 
             playerName={playerData?.name}
@@ -209,36 +227,32 @@ function App() {
         />
       )}
       {screen === 'loading' && (
-        <div className="screen">
-          <div style={{textAlign:'center'}}>
-            <h1 style={{fontSize:'clamp(2rem,8vw,5rem)', color:'#ff3c3c', textShadow:'0 0 30px #ff3c3c', marginBottom:'20px', letterSpacing:'4px'}}>
+        <div className="screen min-h-screen flex flex-col items-center justify-center p-4">
+          <div className="text-center w-full max-w-lg">
+            <h1 className="text-3xl md:text-6xl text-red-500 font-['Bebas_Neue'] tracking-widest mb-4 md:mb-6 drop-shadow-[0_0_30px_rgba(255,60,60,0.8)]">
               AMIGO FIGHTER
             </h1>
-            <div style={{fontSize:'clamp(1rem,4vw,2rem)', color:'#fff', letterSpacing:'6px', marginBottom:'30px', animation:'pulse 1.5s infinite'}}>
-              {LOADING_MSGS[Math.floor(Date.now() / 1000) % LOADING_MSGS.length]}
+            <div className="text-base md:text-2xl text-white font-['Bebas_Neue'] tracking-[0.3em] md:tracking-[0.4em] mb-6 animate-pulse">
+              {LOADING_MSGS[loadingMsgIdx]}
             </div>
-            <div style={{display:'flex', gap:'12px', justifyContent:'center'}}>
+            <div className="flex gap-2 md:gap-3 justify-center mb-6">
               {[0,1,2,3,4].map(i => (
-                <div key={i} style={{
-                  width:'14px', height:'14px', borderRadius:'50%',
-                  background: '#ff3c3c',
-                  boxShadow:'0 0 10px #ff3c3c',
-                  animation:`bounce 1.2s ${i*0.15}s infinite alternate`
-                }} />
+                <div key={i} className="w-3 h-3 md:w-4 md:h-4 rounded-full bg-red-500 shadow-[0_0_10px_#ff3c3c]"
+                  style={{ animation: `bounce 1.2s ${i*0.15}s infinite alternate` }} />
               ))}
             </div>
 
             {/* M-5: Tournament mode — show opponent name, no CPU option */}
             {roomId.startsWith('T-') && (
-              <div className="mt-10 flex flex-col items-center gap-3">
+              <div className="mt-6 md:mt-10 flex flex-col items-center gap-3">
                 {opponentInfo?.face && (
                   <img src={opponentInfo.face} alt={opponentInfo.name}
-                    className="w-16 h-16 rounded-full border-2 border-red-500 object-cover shadow-[0_0_15px_rgba(255,0,0,0.5)]" />
+                    className="w-12 h-12 md:w-16 md:h-16 rounded-full border-2 border-red-500 object-cover shadow-[0_0_15px_rgba(255,0,0,0.5)]" />
                 )}
-                <div className="text-neutral-300 font-['Bebas_Neue'] text-2xl md:text-3xl tracking-[0.2em]">
+                <div className="text-neutral-300 font-['Bebas_Neue'] text-xl md:text-3xl tracking-[0.2em]">
                   VS <span className="text-red-400">{opponentInfo?.name || 'TU RIVAL'}</span>
                 </div>
-                <div className="text-neutral-500 font-['Bebas_Neue'] text-lg tracking-[0.2em] animate-pulse">
+                <div className="text-neutral-500 font-['Bebas_Neue'] text-sm md:text-lg tracking-[0.2em] animate-pulse">
                   ESPERANDO QUE TU RIVAL ESTÉ LISTO...
                 </div>
               </div>
@@ -246,23 +260,23 @@ function App() {
 
             {/* Normal mode — no opponent yet */}
             {opponentCount === 0 && !roomId.startsWith('T-') && (
-                <div className="mt-12 flex flex-col items-center gap-4">
-                  <div className="text-neutral-400 font-['Bebas_Neue'] text-xl md:text-2xl tracking-[0.2em] animate-pulse">
+                <div className="mt-8 md:mt-12 flex flex-col items-center gap-3 md:gap-4">
+                  <div className="text-neutral-400 font-['Bebas_Neue'] text-lg md:text-2xl tracking-[0.2em] animate-pulse">
                     ESPERANDO A UN RETADOR...
                   </div>
-                  <div className="flex flex-col md:flex-row items-center gap-4">
+                  <div className="flex flex-col items-center gap-3">
                     <button 
                       onClick={startCPUMatch}
-                      className="px-8 py-4 bg-transparent border-2 border-red-500 text-red-500 hover:bg-red-600 hover:text-white font-['Bebas_Neue'] text-2xl tracking-widest transition-all duration-300 shadow-[0_0_15px_rgba(255,0,0,0.4)]"
+                      className="px-6 py-3 md:px-8 md:py-4 bg-transparent border-2 border-red-500 text-red-500 hover:bg-red-600 hover:text-white font-['Bebas_Neue'] text-xl md:text-2xl tracking-widest transition-all duration-300 shadow-[0_0_15px_rgba(255,0,0,0.4)]"
                     >
                       JUGAR VS CPU
                     </button>
-                    <div className="flex gap-2 bg-neutral-900/80 p-2 border border-neutral-700 rounded shadow-inner">
+                    <div className="flex flex-wrap gap-1.5 md:gap-2 bg-neutral-900/80 p-1.5 md:p-2 border border-neutral-700 rounded shadow-inner justify-center">
                       {['facil', 'normal', 'dificil'].map(diff => (
                         <button
                           key={diff}
                           onClick={() => setCpuDifficulty(diff)}
-                          className={`px-4 py-2 font-['Bebas_Neue'] tracking-wider text-lg transition-colors border ${cpuDifficulty === diff ? 'bg-red-600 text-white border-red-400 shadow-[0_0_10px_rgba(255,0,0,0.6)]' : 'bg-black text-neutral-400 border-neutral-600 hover:text-white hover:border-neutral-400'}`}
+                          className={`px-3 py-1.5 md:px-4 md:py-2 font-['Bebas_Neue'] tracking-wider text-sm md:text-lg transition-colors border ${cpuDifficulty === diff ? 'bg-red-600 text-white border-red-400 shadow-[0_0_10px_rgba(255,0,0,0.6)]' : 'bg-black text-neutral-400 border-neutral-600 hover:text-white hover:border-neutral-400'}`}
                         >
                           {diff.toUpperCase()}
                         </button>
@@ -274,7 +288,7 @@ function App() {
 
             {/* Normal mode — opponent is connected and selecting character */}
             {opponentCount > 0 && !roomId.startsWith('T-') && (
-                <div className="mt-8 text-neutral-400 font-['Bebas_Neue'] text-xl tracking-widest animate-pulse">
+                <div className="mt-6 md:mt-8 text-neutral-400 font-['Bebas_Neue'] text-lg md:text-xl tracking-widest animate-pulse">
                   RIVAL CONECTADO — ESPERANDO SELECCIÓN...
                 </div>
             )}

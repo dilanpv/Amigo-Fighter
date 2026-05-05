@@ -1,4 +1,5 @@
 import * as Phaser from 'phaser';
+import SoundManager from './SoundManager';
 
 export default class FighterGame extends Phaser.Scene {
     constructor() {
@@ -14,6 +15,7 @@ export default class FighterGame extends Phaser.Scene {
         this.hp = { p1: 100, p2: 100 };
         this.gameOver = false;
         this.cpuDifficulty = data.cpuDifficulty || 'normal'; // H-3
+        this.sound_mgr = data.soundManager || null; // N-4: shared SoundManager instance
         
         // Character specs & Stats
         this.charSpec = this.playerData.character || { 
@@ -47,6 +49,12 @@ export default class FighterGame extends Phaser.Scene {
         this.setupInputs();
         this.setupSocketListeners();
 
+        // N-4: Start BGM when combat begins
+        if (this.sound_mgr) {
+            this.sound_mgr.startBGM();
+            this.sound_mgr.sfxVoFight(); // "¡FIGHT!" voice SFX
+        }
+
         // Escuchar evento de reinicio de ronda desde la UI (via game.events, no scene.events)
         this.game.events.on('resetRound', this.resetPositions, this);
         this.game.events.on('gameOver', this.handleGameOver, this);
@@ -57,27 +65,73 @@ export default class FighterGame extends Phaser.Scene {
     }
 
     setupArena() {
-        // Fondo con gradiente
-        this.add.rectangle(400, 150, 800, 300, 0x0f0f1a);
-        
-        // Suelo del ring con textura simple
-        this.add.rectangle(400, 420, 800, 120, 0x1a1a2e);
-        this.add.rectangle(400, 360, 800, 4, 0xffffff, 0.1); // Línea de brillo
-        
-        // Postes y cuerdas
-        this.add.rectangle(50, 280, 20, 200, 0x333333);
-        this.add.rectangle(750, 280, 20, 200, 0x333333);
-        
-        for (let i = 0; i < 3; i++) {
-            this.add.rectangle(400, 220 + i*40, 700, 4, 0xcc0000); // Cuerdas rojas
-        }
-        
-        // Luces de estadio (efecto simple)
-        for (let i = 0; i < 5; i++) {
-            this.add.circle(100 + i*150, 50, 30, 0xffffff, 0.05);
+        // === FONDO DEGRADADO (cielo de estadio oscuro) ===
+        const bg = this.add.graphics();
+        bg.fillGradientStyle(0x06060f, 0x06060f, 0x12122a, 0x12122a, 1);
+        bg.fillRect(0, 0, 800, 450);
+
+        // === SILUETA DE MULTITUD ===
+        const crowd = this.add.graphics();
+        crowd.fillStyle(0x111120, 1);
+        for (let x = 0; x < 800; x += 18) {
+            const h = 20 + Math.sin(x * 0.3) * 8 + (x % 17) * 0.7;
+            crowd.fillRect(x, 290 - h, 14, h);
         }
 
-        // Crear textura para partículas en memoria
+        // === CONOS DE LUZ (spotlights) ===
+        const lights = this.add.graphics();
+        [120, 300, 500, 680].forEach(sx => {
+            lights.fillStyle(0xffeedd, 0.04);
+            lights.fillTriangle(sx, 0, sx - 60, 320, sx + 60, 320);
+        });
+
+        // === GLOW DEL SUELO DEL RING ===
+        const ringGlow = this.add.graphics();
+        ringGlow.fillStyle(0xff2222, 0.07);
+        ringGlow.fillEllipse(400, 390, 700, 50);
+        this.tweens.add({
+            targets: ringGlow,
+            alpha: { from: 0.6, to: 1 },
+            duration: 1800,
+            yoyo: true,
+            repeat: -1,
+            ease: 'Sine.easeInOut'
+        });
+
+        // === SUELO DEL RING ===
+        const floor = this.add.graphics();
+        floor.fillGradientStyle(0x1a1a2e, 0x1a1a2e, 0x0d0d18, 0x0d0d18, 1);
+        floor.fillRect(0, 360, 800, 90);
+        this.add.rectangle(400, 362, 800, 2, 0xffffff, 0.08);
+
+        // === POSTES DEL RING ===
+        const postG = this.add.graphics();
+        postG.fillGradientStyle(0x555555, 0x333333, 0x222222, 0x444444, 1);
+        postG.fillRect(42, 190, 16, 175);
+        postG.fillGradientStyle(0x555555, 0x333333, 0x222222, 0x444444, 1);
+        postG.fillRect(742, 190, 16, 175);
+        this.add.circle(50, 190, 10, 0x888888);
+        this.add.circle(750, 190, 10, 0x888888);
+
+        // === CUERDAS DEL RING ===
+        [220, 258, 296].forEach((ry, i) => {
+            const shade = Math.floor(0xcc - i * 0x22);
+            this.add.rectangle(400, ry + 2, 700, 3, 0x000000, 0.4);
+            this.add.rectangle(400, ry, 700, 4, (shade << 16));
+            this.add.rectangle(400, ry - 1, 700, 1, 0xff6666, 0.3);
+        });
+
+        // === FOCOS DEL ESTADIO ===
+        const lampG = this.add.graphics();
+        [80, 260, 400, 540, 720].forEach((lx, idx) => {
+            const ly = 18 + (idx % 2) * 12;
+            lampG.fillStyle(0xffffff, 0.9);
+            lampG.fillCircle(lx, ly, 5);
+            lampG.fillStyle(0xffffee, 0.05);
+            lampG.fillCircle(lx, ly, 22);
+        });
+
+        // === Texturas de partículas en memoria ===
         const g = this.make.graphics({x:0, y:0, add:false});
         g.fillStyle(0xffffff, 1);
         g.fillCircle(4, 4, 4);
@@ -88,6 +142,7 @@ export default class FighterGame extends Phaser.Scene {
         dg.fillCircle(3, 3, 3);
         dg.generateTexture('particle_dust', 6, 6);
     }
+
 
     emitDust(x, y) {
         const emitter = this.add.particles(x, y, 'particle_dust', {
@@ -297,6 +352,8 @@ export default class FighterGame extends Phaser.Scene {
             this.game.events.off('resetRound', this.resetPositions, this);
             this.game.events.off('gameOver',   this.handleGameOver,  this);
         }
+        // N-4: Stop BGM when scene is destroyed
+        if (this.sound_mgr) this.sound_mgr.stopBGM();
         // Cancel any pending timers on players
         Object.values(this.players || {}).forEach(p => {
             if (p.attackTimer) this.time.removeEvent(p.attackTimer);
@@ -320,6 +377,8 @@ export default class FighterGame extends Phaser.Scene {
             }
         });
         this.syncGraphics();
+        // N-4: Round reset SFX
+        if (this.sound_mgr) this.sound_mgr.sfxVoFight();
         
         const fightText = this.add.text(400, 200, '¡FIGHT!', {
             fontFamily: 'Bebas Neue, sans-serif',
@@ -342,6 +401,8 @@ export default class FighterGame extends Phaser.Scene {
 
     handleGameOver(data) {
         this.gameOver = true;
+        // N-4: KO SFX
+        if (this.sound_mgr) this.sound_mgr.sfxKO();
 
         Object.values(this.players).forEach(p => {
             if (p.moveTween) p.moveTween.stop();
@@ -477,6 +538,7 @@ export default class FighterGame extends Phaser.Scene {
 
         if (onGround && !local.wasOnGround) {
             this.emitDust(local.sprite.x, 390); // landed
+            if (this.sound_mgr) this.sound_mgr.sfxLand(); // N-4
         }
 
         if (this.cursors.up.isDown && onGround) {
@@ -484,6 +546,7 @@ export default class FighterGame extends Phaser.Scene {
             anim = 'jump';
             moved = true;
             this.emitDust(local.sprite.x, 390); // jumped
+            if (this.sound_mgr) this.sound_mgr.sfxJump(); // N-4
         }
 
         local.wasOnGround = onGround;
@@ -503,6 +566,13 @@ export default class FighterGame extends Phaser.Scene {
         f.state = 'attacking';
         f.hasHit = false;
         f.sprite.play(`${type}_${f.id}`, true);
+        // N-4: Attack SFX (only for local player to avoid duplicate)
+        if (f.isLocal && this.sound_mgr) {
+            if (type === 'jab')     this.sound_mgr.sfxJab();
+            else if (type === 'hook')    this.sound_mgr.sfxHook();
+            else if (type === 'kick')    this.sound_mgr.sfxKick();
+            else if (type === 'special') this.sound_mgr.sfxSpecial();
+        }
         this.socket.emit('player_attack', { roomId: this.roomId, id: this.playerData.id, type });
         
         // Timeout de seguridad en caso de que la animación sea interrumpida
@@ -615,9 +685,16 @@ export default class FighterGame extends Phaser.Scene {
             finalDamage = Math.max(1, Math.round(finalDamage));
         }
 
+        const prevState = target.state; // N-4 fix: capture state before overwrite
         target.state = 'hit';
         target.sprite.play(`hit_${target.id}`, true);
         target.sprite.setTint(0xff0000);
+        // N-4: Hit / Block SFX
+        if (this.sound_mgr) {
+            if (prevState === 'blocking') this.sound_mgr.sfxBlock();
+            else if (isCombo) this.sound_mgr.sfxCombo();
+            else this.sound_mgr.sfxHit();
+        }
 
         // Impact FX
         const color = attackerX > target.sprite.x ? 0xffcccc : 0xccffff;
