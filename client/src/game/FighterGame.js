@@ -304,13 +304,8 @@ export default class FighterGame extends Phaser.Scene {
             const opp = this.players[data.id];
             if (opp && opp.state !== 'attacking') {
                 if (opp.moveTween) opp.moveTween.stop();
-                opp.moveTween = this.tweens.add({
-                    targets: opp.sprite,
-                    x: data.x,
-                    y: data.y,
-                    duration: 60,
-                    ease: 'Linear'
-                });
+                opp.targetX = data.x;
+                opp.targetY = data.y;
                 opp.sprite.play(`${data.anim}_${opp.id}`, true);
                 opp.sprite.setFlipX(data.flip);
             }
@@ -447,6 +442,18 @@ export default class FighterGame extends Phaser.Scene {
         if (this.players['CPU']) {
             this.checkCombatCollision(this.players['CPU']);
         }
+
+        // M-2: Lag compensation (Client-side interpolation)
+        Object.values(this.players).forEach(p => {
+            if (!p.isLocal && !p.isCPU && p.targetX !== undefined && p.state !== 'attacking' && p.state !== 'hit' && p.state !== 'ko') {
+                p.sprite.x = Phaser.Math.Linear(p.sprite.x, p.targetX, 0.4);
+                p.sprite.y = Phaser.Math.Linear(p.sprite.y, p.targetY, 0.4);
+                
+                // Snap if very close
+                if (Math.abs(p.sprite.x - p.targetX) < 1) p.sprite.x = p.targetX;
+                if (Math.abs(p.sprite.y - p.targetY) < 1) p.sprite.y = p.targetY;
+            }
+        });
     }
 
     handleCPU(cpu, player) {

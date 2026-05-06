@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import * as Phaser from 'phaser';
 import FighterGame from '../game/FighterGame';
 import SoundManager from '../game/SoundManager';
+import VirtualJoystick from './VirtualJoystick';
 import { socket } from '../socket';
 
 function GameView({ roomId, playerData, gameState, onEnd }) {
@@ -50,6 +51,17 @@ function GameView({ roomId, playerData, gameState, onEnd }) {
 
   const triggerKey = (keyCode, isDown) => {
       window.dispatchEvent(new KeyboardEvent(isDown ? 'keydown' : 'keyup', { keyCode: keyCode }));
+  };
+
+  const joystickState = useRef({ up: false, down: false, left: false, right: false });
+
+  const handleJoystickMove = (dir) => {
+      const prev = joystickState.current;
+      if (dir.up !== prev.up) triggerKey(38, dir.up);
+      if (dir.down !== prev.down) triggerKey(40, dir.down);
+      if (dir.left !== prev.left) triggerKey(37, dir.left);
+      if (dir.right !== prev.right) triggerKey(39, dir.right);
+      joystickState.current = dir;
   };
 
   const handleFullscreen = async () => {
@@ -148,6 +160,14 @@ function GameView({ roomId, playerData, gameState, onEnd }) {
       }
     } else if (hp.p2 > hp.p1) {
       gameRef.current.events.emit('updateHP', { id: gameRef.current.scene.getScene('FighterGame')?.playerData?.id, damage: 9999 });
+    } else {
+      // Draw - knockout both
+      const scene = gameRef.current.scene.getScene('FighterGame');
+      if (scene) {
+        const oppPlayer = scene.gameState.players.find(p => p.id !== scene.playerData.id);
+        gameRef.current.events.emit('updateHP', { id: oppPlayer?.id || 'CPU', damage: 9999 });
+        gameRef.current.events.emit('updateHP', { id: scene.playerData.id, damage: 9999 });
+      }
     }
   }, [timeLeft]);
 
@@ -243,7 +263,7 @@ function GameView({ roomId, playerData, gameState, onEnd }) {
   const opponent = gameState.players.find(p => p.id !== playerData.id);
 
   return (
-    <div className="h-[100dvh] w-full flex flex-col bg-neutral-950 overflow-hidden select-none relative">
+    <div className="fixed inset-0 flex flex-col bg-neutral-950 overflow-hidden select-none">
       <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-red-900/20 via-black to-black opacity-80 z-0"></div>
 
       {/* HUD OVERLAY */}
@@ -478,35 +498,10 @@ function GameView({ roomId, playerData, gameState, onEnd }) {
       </div>
 
         {/* MOBILE CONTROLS */}
-        <div className="md:hidden absolute bottom-0 left-1 right-1 flex justify-between items-end z-40 pointer-events-none pb-1" style={{ paddingBottom: 'max(4px, env(safe-area-inset-bottom))' }}>
-            {/* D-PAD */}
-            <div className="flex flex-col items-center gap-0.5 pointer-events-auto opacity-50 active:opacity-80">
-                <button 
-                    onPointerDown={(e) => { e.preventDefault(); triggerKey(38, true); }}
-                    onPointerUp={(e) => { e.preventDefault(); triggerKey(38, false); }}
-                    onPointerOut={(e) => { e.preventDefault(); triggerKey(38, false); }}
-                    className="w-14 h-14 bg-neutral-800/80 border-2 border-neutral-600 rounded-t-xl text-white font-bold active:bg-red-600 active:scale-95 transition-all shadow-lg text-2xl"
-                >▲</button>
-                <div className="flex gap-0.5">
-                    <button 
-                        onPointerDown={(e) => { e.preventDefault(); triggerKey(37, true); }}
-                        onPointerUp={(e) => { e.preventDefault(); triggerKey(37, false); }}
-                        onPointerOut={(e) => { e.preventDefault(); triggerKey(37, false); }}
-                        className="w-14 h-14 bg-neutral-800/80 border-2 border-neutral-600 rounded-l-xl text-white font-bold active:bg-red-600 active:scale-95 transition-all shadow-lg text-2xl"
-                    >◄</button>
-                    <button 
-                        onPointerDown={(e) => { e.preventDefault(); triggerKey(40, true); }}
-                        onPointerUp={(e) => { e.preventDefault(); triggerKey(40, false); }}
-                        onPointerOut={(e) => { e.preventDefault(); triggerKey(40, false); }}
-                        className="w-14 h-14 bg-neutral-800/80 border-2 border-neutral-600 rounded-b-xl text-white font-bold active:bg-red-600 active:scale-95 transition-all shadow-lg text-2xl"
-                    >▼</button>
-                    <button 
-                        onPointerDown={(e) => { e.preventDefault(); triggerKey(39, true); }}
-                        onPointerUp={(e) => { e.preventDefault(); triggerKey(39, false); }}
-                        onPointerOut={(e) => { e.preventDefault(); triggerKey(39, false); }}
-                        className="w-14 h-14 bg-neutral-800/80 border-2 border-neutral-600 rounded-r-xl text-white font-bold active:bg-red-600 active:scale-95 transition-all shadow-lg text-2xl"
-                    >►</button>
-                </div>
+        <div className="md:hidden absolute bottom-0 left-1 right-1 flex justify-between items-end z-40 pointer-events-none pb-2 md:pb-4 pl-4" style={{ paddingBottom: 'max(8px, env(safe-area-inset-bottom))' }}>
+            {/* VIRTUAL JOYSTICK */}
+            <div className="mb-2">
+                <VirtualJoystick onMove={handleJoystickMove} />
             </div>
 
             {/* RIGHT SIDE: EMOTES + ACTION BUTTONS */}
