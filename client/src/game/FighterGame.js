@@ -199,10 +199,9 @@ export default class FighterGame extends Phaser.Scene {
         const isSinglePlayer = this.gameState.players.length === 1;
         
         const getHeadOffset = (spec) => {
-            if (!spec || !spec.headPos) return -80;
-            const topPct = parseFloat(spec.headPos.top) / 100;
-            const h = spec.fHeight || 192;
-            return (-h / 2) + (h * topPct) + 15;
+            const topPct = spec?.headPos ? parseFloat(spec.headPos.top) / 100 : 0.20;
+            const h = spec?.fHeight || 192;
+            return (-h / 2) + (h * topPct);
         };
         
         // Spawn Local Player
@@ -785,9 +784,9 @@ export default class FighterGame extends Phaser.Scene {
         Object.values(this.players).forEach(p => {
             if (p.face) {
                 p.face.x = p.sprite.x;
-                const topPct = p.spec?.headPos ? parseFloat(p.spec.headPos.top) / 100 : 0.15;
+                const topPct = p.spec?.headPos ? parseFloat(p.spec.headPos.top) / 100 : 0.20;
                 const h = p.spec?.fHeight || 192;
-                const faceYOffset = (-h / 2) + (h * topPct) + 15;
+                const faceYOffset = (-h / 2) + (h * topPct);
                 p.face.y = p.sprite.y + faceYOffset;
                 p.face.setFlipX(p.sprite.flipX);
                 

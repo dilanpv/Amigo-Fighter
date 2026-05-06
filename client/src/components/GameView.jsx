@@ -312,8 +312,8 @@ function GameView({ roomId, playerData, gameState, onEnd }) {
 
               <button
                 onClick={handleFullscreen}
-                className="md:hidden px-1.5 py-0.5 bg-neutral-900/80 text-white font-['Bebas_Neue'] text-[10px] tracking-widest border border-neutral-600 rounded shadow-[0_0_10px_rgba(0,0,0,0.5)] hover:bg-neutral-800"
-              >🖵</button>
+                className="md:hidden px-2 py-1 bg-neutral-900/80 text-white font-['Bebas_Neue'] text-xs tracking-widest border border-neutral-600 rounded shadow-[0_0_10px_rgba(0,0,0,0.5)] hover:bg-neutral-800"
+              >⛶</button>
 
               <div className="flex flex-col items-center mx-0.5 md:mx-1 bg-black/50 p-1 md:p-2 border border-neutral-800 rounded">
                   <div className="font-['Bebas_Neue'] text-[8px] md:text-sm text-red-500 tracking-widest">RONDA {round}</div>
