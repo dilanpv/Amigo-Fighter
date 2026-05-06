@@ -321,7 +321,16 @@ export default class FighterGame extends Phaser.Scene {
             if (opp) {
                 opp.state = 'attacking';
                 opp.sprite.play(`${data.type}_${opp.id}`, true);
-                opp.sprite.once('animationcomplete', () => opp.state = 'idle');
+                
+                // Fallback timeout to prevent getting stuck in attacking state
+                if (opp.attackTimer) this.time.removeEvent(opp.attackTimer);
+                opp.attackTimer = this.time.delayedCall(600, () => {
+                    if (opp.state === 'attacking') opp.state = 'idle';
+                });
+
+                opp.sprite.once('animationcomplete', () => {
+                    if (opp.state === 'attacking') opp.state = 'idle';
+                });
             }
         };
 
@@ -553,11 +562,17 @@ export default class FighterGame extends Phaser.Scene {
 
         if (moved || anim !== local.lastAnim) {
             local.sprite.play(`${anim}_${local.id}`, true);
-            this.socket.emit('player_move', {
-                roomId: this.roomId, id: this.playerData.id,
-                x: local.sprite.x, y: local.sprite.y,
-                anim: anim, flip: local.sprite.flipX
-            });
+            
+            // Throttle socket emits to 20 updates per second (50ms) to prevent network flooding
+            const now = this.time.now;
+            if (!local.lastEmitTime || now - local.lastEmitTime >= 50 || anim !== local.lastAnim) {
+                this.socket.emit('player_move', {
+                    roomId: this.roomId, id: this.playerData.id,
+                    x: local.sprite.x, y: local.sprite.y,
+                    anim: anim, flip: local.sprite.flipX
+                });
+                local.lastEmitTime = now;
+            }
             local.lastAnim = anim;
         }
     }

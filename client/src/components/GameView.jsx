@@ -243,13 +243,13 @@ function GameView({ roomId, playerData, gameState, onEnd }) {
   const opponent = gameState.players.find(p => p.id !== playerData.id);
 
   return (
-    <div className="h-screen w-full flex flex-col bg-neutral-950 overflow-hidden select-none">
+    <div className="h-[100dvh] w-full flex flex-col bg-neutral-950 overflow-hidden select-none relative">
       <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-red-900/20 via-black to-black opacity-80 z-0"></div>
 
       {/* HUD OVERLAY */}
-      <div className="w-full px-1 md:px-6 py-1 md:py-2 flex justify-between items-center z-20 flex-shrink-0 bg-gradient-to-b from-black/80 to-transparent">
+      <div className="absolute top-0 left-0 w-full px-1 md:px-6 py-1 md:py-2 flex justify-between items-start md:items-center z-20 bg-gradient-to-b from-black/80 via-black/40 to-transparent pointer-events-none">
 
-        <div className="w-[30%] md:w-[40%] max-w-[420px]">
+        <div className="w-[30%] md:w-[40%] max-w-[420px] pointer-events-auto">
           <div className="flex flex-row items-center gap-1 md:gap-2">
             <div className="w-7 h-7 md:w-16 md:h-16 border border-white md:border-2 bg-black overflow-hidden shadow-[0_0_15px_rgba(255,255,255,0.3)] flex-shrink-0 rounded-full">
               {playerData.face ? <img src={playerData.face} className="w-full h-full object-cover" alt="Player 1" /> : <div className="w-full h-full bg-blue-900" />}
@@ -270,7 +270,7 @@ function GameView({ roomId, playerData, gameState, onEnd }) {
         </div>
 
         {/* TIMER CENTER */}
-        <div className="flex flex-col items-center gap-0 md:gap-2 px-0.5 md:px-1 flex-shrink-0 z-30">
+        <div className="flex flex-col items-center gap-0 md:gap-2 px-0.5 md:px-1 z-30 pointer-events-auto mt-0 md:mt-2">
             {/* N-13: Emotes row visible on desktop too */}
             <div className="hidden md:flex gap-1 mb-1 opacity-40 hover:opacity-100 transition-opacity duration-300">
               {['👊', '🔥', '😂', '💀', '👑'].map(emoji => (
@@ -339,7 +339,7 @@ function GameView({ roomId, playerData, gameState, onEnd }) {
             </div>
         </div>
 
-        <div className="w-[30%] md:w-[40%] max-w-[420px]">
+        <div className="w-[30%] md:w-[40%] max-w-[420px] pointer-events-auto">
           <div className="flex flex-row-reverse items-center gap-1 md:gap-2 text-right">
             <div className="w-7 h-7 md:w-16 md:h-16 border border-red-500 md:border-2 bg-black overflow-hidden shadow-[0_0_15px_#ff3c3c] flex-shrink-0 rounded-full">
               {opponent?.face ? <img src={opponent.face} className="w-full h-full object-cover" alt="Player 2" /> : <div className="w-full h-full bg-red-900" />}
@@ -362,7 +362,7 @@ function GameView({ roomId, playerData, gameState, onEnd }) {
       </div>
 
       {/* PHASER CONTAINER */}
-      <div className="relative flex-1 w-full overflow-hidden flex items-center justify-center z-10 p-0 md:p-0">
+      <div className="absolute inset-0 w-full h-full overflow-hidden flex items-center justify-center z-10 p-0 md:p-0">
         <div id="phaser-parent" ref={containerRef} className="w-full h-full md:max-w-[1200px] md:max-h-[800px] md:rounded-lg overflow-hidden md:border md:border-neutral-800 shadow-2xl" />
 
         {/* M-1: ROUND ANNOUNCE OVERLAY */}
@@ -485,26 +485,26 @@ function GameView({ roomId, playerData, gameState, onEnd }) {
                     onPointerDown={(e) => { e.preventDefault(); triggerKey(38, true); }}
                     onPointerUp={(e) => { e.preventDefault(); triggerKey(38, false); }}
                     onPointerOut={(e) => { e.preventDefault(); triggerKey(38, false); }}
-                    className="w-10 h-10 bg-neutral-800/80 border-2 border-neutral-600 rounded-t-xl text-white font-bold active:bg-red-600 active:scale-95 transition-all shadow-lg text-lg"
+                    className="w-14 h-14 bg-neutral-800/80 border-2 border-neutral-600 rounded-t-xl text-white font-bold active:bg-red-600 active:scale-95 transition-all shadow-lg text-2xl"
                 >▲</button>
                 <div className="flex gap-0.5">
                     <button 
                         onPointerDown={(e) => { e.preventDefault(); triggerKey(37, true); }}
                         onPointerUp={(e) => { e.preventDefault(); triggerKey(37, false); }}
                         onPointerOut={(e) => { e.preventDefault(); triggerKey(37, false); }}
-                        className="w-10 h-10 bg-neutral-800/80 border-2 border-neutral-600 rounded-l-xl text-white font-bold active:bg-red-600 active:scale-95 transition-all shadow-lg text-lg"
+                        className="w-14 h-14 bg-neutral-800/80 border-2 border-neutral-600 rounded-l-xl text-white font-bold active:bg-red-600 active:scale-95 transition-all shadow-lg text-2xl"
                     >◄</button>
                     <button 
                         onPointerDown={(e) => { e.preventDefault(); triggerKey(40, true); }}
                         onPointerUp={(e) => { e.preventDefault(); triggerKey(40, false); }}
                         onPointerOut={(e) => { e.preventDefault(); triggerKey(40, false); }}
-                        className="w-10 h-10 bg-neutral-800/80 border-2 border-neutral-600 rounded-b-xl text-white font-bold active:bg-red-600 active:scale-95 transition-all shadow-lg text-lg"
+                        className="w-14 h-14 bg-neutral-800/80 border-2 border-neutral-600 rounded-b-xl text-white font-bold active:bg-red-600 active:scale-95 transition-all shadow-lg text-2xl"
                     >▼</button>
                     <button 
                         onPointerDown={(e) => { e.preventDefault(); triggerKey(39, true); }}
                         onPointerUp={(e) => { e.preventDefault(); triggerKey(39, false); }}
                         onPointerOut={(e) => { e.preventDefault(); triggerKey(39, false); }}
-                        className="w-10 h-10 bg-neutral-800/80 border-2 border-neutral-600 rounded-r-xl text-white font-bold active:bg-red-600 active:scale-95 transition-all shadow-lg text-lg"
+                        className="w-14 h-14 bg-neutral-800/80 border-2 border-neutral-600 rounded-r-xl text-white font-bold active:bg-red-600 active:scale-95 transition-all shadow-lg text-2xl"
                     >►</button>
                 </div>
             </div>
@@ -530,33 +530,33 @@ function GameView({ roomId, playerData, gameState, onEnd }) {
                 </div>
 
                 {/* ACTION BUTTONS */}
-                <div className="flex flex-col gap-1.5 opacity-60 mr-1">
-                    <div className="flex gap-1.5 justify-end">
+                <div className="flex flex-col gap-2 opacity-70 mr-2 mb-2">
+                    <div className="flex gap-2 justify-end">
                         <button 
                             onPointerDown={(e) => { e.preventDefault(); triggerKey(87, true); }}
                             onPointerUp={(e) => { e.preventDefault(); triggerKey(87, false); }}
                             onPointerOut={(e) => { e.preventDefault(); triggerKey(87, false); }}
-                            className="w-12 h-12 bg-purple-600/90 border-2 border-purple-400 rounded-full text-white font-['Bebas_Neue'] text-sm active:bg-purple-500 active:scale-95 transition-all shadow-[0_0_15px_rgba(147,51,234,0.5)]"
+                            className="w-16 h-16 bg-purple-600/90 border-2 border-purple-400 rounded-full text-white font-['Bebas_Neue'] text-lg active:bg-purple-500 active:scale-95 transition-all shadow-[0_0_15px_rgba(147,51,234,0.5)]"
                         >ESP</button>
                         <button 
                             onPointerDown={(e) => { e.preventDefault(); triggerKey(68, true); }}
                             onPointerUp={(e) => { e.preventDefault(); triggerKey(68, false); }}
                             onPointerOut={(e) => { e.preventDefault(); triggerKey(68, false); }}
-                            className="w-12 h-12 bg-blue-600/90 border-2 border-blue-400 rounded-full text-white font-['Bebas_Neue'] text-sm active:bg-blue-500 active:scale-95 transition-all shadow-[0_0_15px_rgba(37,99,235,0.5)]"
+                            className="w-16 h-16 bg-blue-600/90 border-2 border-blue-400 rounded-full text-white font-['Bebas_Neue'] text-lg active:bg-blue-500 active:scale-95 transition-all shadow-[0_0_15px_rgba(37,99,235,0.5)]"
                         >PAT</button>
                     </div>
-                    <div className="flex gap-1.5 justify-end mr-5">
+                    <div className="flex gap-2 justify-end mr-8">
                         <button 
                             onPointerDown={(e) => { e.preventDefault(); triggerKey(65, true); }}
                             onPointerUp={(e) => { e.preventDefault(); triggerKey(65, false); }}
                             onPointerOut={(e) => { e.preventDefault(); triggerKey(65, false); }}
-                            className="w-12 h-12 bg-green-600/90 border-2 border-green-400 rounded-full text-white font-['Bebas_Neue'] text-sm active:bg-green-500 active:scale-95 transition-all shadow-[0_0_15px_rgba(34,197,94,0.5)]"
+                            className="w-16 h-16 bg-green-600/90 border-2 border-green-400 rounded-full text-white font-['Bebas_Neue'] text-lg active:bg-green-500 active:scale-95 transition-all shadow-[0_0_15px_rgba(34,197,94,0.5)]"
                         >JAB</button>
                         <button 
                             onPointerDown={(e) => { e.preventDefault(); triggerKey(83, true); }}
                             onPointerUp={(e) => { e.preventDefault(); triggerKey(83, false); }}
                             onPointerOut={(e) => { e.preventDefault(); triggerKey(83, false); }}
-                            className="w-12 h-12 bg-red-600/90 border-2 border-red-400 rounded-full text-white font-['Bebas_Neue'] text-sm active:bg-red-500 active:scale-95 transition-all shadow-[0_0_15px_rgba(220,38,38,0.5)]"
+                            className="w-16 h-16 bg-red-600/90 border-2 border-red-400 rounded-full text-white font-['Bebas_Neue'] text-lg active:bg-red-500 active:scale-95 transition-all shadow-[0_0_15px_rgba(220,38,38,0.5)]"
                         >GAN</button>
                     </div>
                 </div>
