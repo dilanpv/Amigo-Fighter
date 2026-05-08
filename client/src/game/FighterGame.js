@@ -26,9 +26,12 @@ export default class FighterGame extends Phaser.Scene {
     }
 
     preload() {
+        // Cache buster for new assets
+        const cb = '?v=' + Date.now();
+        
         this.gameState.players.forEach(p => {
             const spec = p.character || this.charSpec;
-            this.load.spritesheet(`fighter_${p.id}`, encodeURI(spec.img || '/assets/LUCHADOR.png'), {
+            this.load.spritesheet(`fighter_${p.id}`, encodeURI(spec.img || '/assets/LUCHADOR.png') + cb, {
                 frameWidth: spec.fWidth || 128,
                 frameHeight: spec.fHeight || 192
             });
@@ -38,10 +41,35 @@ export default class FighterGame extends Phaser.Scene {
             }
         });
         
-        this.load.spritesheet('fighter_CPU', encodeURI('/assets/LUCHADOR.png'), { frameWidth: 128, frameHeight: 192 });
+        // Carga al Agresivo para la CPU
+        this.load.spritesheet('fighter_CPU', encodeURI('/assets/EL AGRESIVO.png') + cb, { frameWidth: 128, frameHeight: 192 });
+        // Carga avatar por defecto para la CPU
+        const cpuFaceUrl = `https://api.dicebear.com/7.x/pixel-art/svg?seed=CPU_Fighter`;
+        this.load.image('face_CPU', cpuFaceUrl);
+        
+        // Escenarios aleatorios
+        this.stages = [
+            "Gemini_Generated_Image_18znjw18znjw18zn.png",
+            "Gemini_Generated_Image_291wo1291wo1291w.png",
+            "Gemini_Generated_Image_7v9x2x7v9x2x7v9x.png",
+            "Gemini_Generated_Image_atsrnjatsrnjatsr.png",
+            "Gemini_Generated_Image_csadcmcsadcmcsad.png",
+            "Gemini_Generated_Image_m0y0i3m0y0i3m0y0.png",
+            "Gemini_Generated_Image_muj2mgmuj2mgmuj2.png",
+            "Gemini_Generated_Image_rh84d8rh84d8rh84.png",
+            "Gemini_Generated_Image_rvqzpgrvqzpgrvqz.png",
+            "Gemini_Generated_Image_whk0gpwhk0gpwhk0.png"
+        ];
+        let seed = 0;
+        const roomStr = String(this.roomId || 'test');
+        for (let i = 0; i < roomStr.length; i++) seed += roomStr.charCodeAt(i);
+        this.selectedStage = this.stages[seed % this.stages.length];
+        this.load.image('bg_stage', encodeURI(`/assets/Escenarios/${this.selectedStage}`));
     }
 
     create() {
+        this.physics.world.setBounds(0, -500, 800, 1000); // Mover el límite superior para que no golpeen una "pared invisible" al saltar
+        
         this.setupArena();
         this.setupAnimations();
         this.spawnPlayers();
@@ -65,6 +93,23 @@ export default class FighterGame extends Phaser.Scene {
     }
 
     setupArena() {
+        if (this.textures.exists('bg_stage')) {
+            const bg = this.add.image(400, 225, 'bg_stage');
+            bg.setDisplaySize(800, 450);
+            
+            // Mantener texturas de partículas en memoria
+            const g = this.make.graphics({x:0, y:0, add:false});
+            g.fillStyle(0xffffff, 1);
+            g.fillCircle(4, 4, 4);
+            g.generateTexture('particle_star', 8, 8);
+            
+            const dg = this.make.graphics({x:0, y:0, add:false});
+            dg.fillStyle(0xdcdcdc, 0.6);
+            dg.fillCircle(3, 3, 3);
+            dg.generateTexture('particle_dust', 6, 6);
+            return;
+        }
+
         // === FONDO DEGRADADO (cielo de estadio oscuro) ===
         const bg = this.add.graphics();
         bg.fillGradientStyle(0x06060f, 0x06060f, 0x12122a, 0x12122a, 1);
@@ -101,8 +146,8 @@ export default class FighterGame extends Phaser.Scene {
         // === SUELO DEL RING ===
         const floor = this.add.graphics();
         floor.fillGradientStyle(0x1a1a2e, 0x1a1a2e, 0x0d0d18, 0x0d0d18, 1);
-        floor.fillRect(0, 360, 800, 90);
-        this.add.rectangle(400, 362, 800, 2, 0xffffff, 0.08);
+        floor.fillRect(0, 410, 800, 40); // Bajado significativamente según la línea roja
+        this.add.rectangle(400, 412, 800, 2, 0xffffff, 0.08);
 
         // === POSTES DEL RING ===
         const postG = this.add.graphics();
@@ -173,9 +218,9 @@ export default class FighterGame extends Phaser.Scene {
                 { key: 'hook', start: safeF(17), end: safeF(20), rate: 12, repeat: 0 },
                 { key: 'kick', start: safeF(21), end: safeF(24), rate: 12, repeat: 0 },
                 { key: 'hit', start: safeF(25), end: safeF(27), rate: 10, repeat: 0 },
-                { key: 'special', start: safeF(30), end: safeF(33), rate: 9, repeat: 0 },
-                { key: 'block', start: safeF(37), end: safeF(38), rate: 6, repeat: 0 },
-                { key: 'ko', start: safeF(39), end: safeF(42), rate: 8, repeat: 0 },
+                { key: 'special', start: safeF(28), end: safeF(31), rate: 9, repeat: 0 },
+                { key: 'block', start: safeF(32), end: safeF(33), rate: 6, repeat: 0 },
+                { key: 'ko', start: safeF(34), end: safeF(37), rate: 8, repeat: 0 },
             ];
             
             anims.forEach(a => {
@@ -211,9 +256,9 @@ export default class FighterGame extends Phaser.Scene {
         
         const localFighter = {
             id: p.id,
-            sprite: this.physics.add.sprite(x, 330, `fighter_${p.id}`),
+            sprite: this.physics.add.sprite(x, 314, `fighter_${p.id}`),
             startX: x,
-            startY: 330,
+            startY: 314,
             startFlipX: side === 'right',
             isLocal: true,
             state: 'idle',
@@ -225,9 +270,11 @@ export default class FighterGame extends Phaser.Scene {
         
         if (this.textures.exists(`face_${p.id}`)) {
             const faceYOffset = getHeadOffset(localFighter.spec);
-            localFighter.face = this.add.image(x, 330 + faceYOffset, `face_${p.id}`).setScale(0.12);
-            // Apply Circular Mask (radio 40px)
-            const maskShape = this.add.graphics().fillCircle(0, 0, 40).setVisible(false);
+            
+            // Avatar encima de la cabeza, tamaño reducido
+            localFighter.face = this.add.image(x, 314 + faceYOffset - 100, `face_${p.id}`);
+            localFighter.face.setDisplaySize(45, 45); 
+            const maskShape = this.add.graphics().fillCircle(0, 0, 22.5).setVisible(false);
             localFighter.face.setMask(maskShape.createGeometryMask());
             localFighter.maskShape = maskShape;
         }
@@ -240,9 +287,9 @@ export default class FighterGame extends Phaser.Scene {
             const oppX = oppSide === 'left' ? 180 : 620;
             const oppFighter = {
                 id: oppData.id,
-                sprite: this.physics.add.sprite(oppX, 330, `fighter_${oppData.id}`),
+                sprite: this.physics.add.sprite(oppX, 314, `fighter_${oppData.id}`),
                 startX: oppX,
-                startY: 330,
+                startY: 314,
                 startFlipX: oppSide === 'right',
                 isLocal: false,
                 state: 'idle',
@@ -254,8 +301,11 @@ export default class FighterGame extends Phaser.Scene {
             
             if (this.textures.exists(`face_${oppData.id}`)) {
                 const faceYOffset = getHeadOffset(oppFighter.spec);
-                oppFighter.face = this.add.image(oppX, 330 + faceYOffset, `face_${oppData.id}`).setScale(0.12);
-                const maskShape = this.add.graphics().fillCircle(0, 0, 40).setVisible(false);
+                
+                // Avatar encima de la cabeza
+                oppFighter.face = this.add.image(oppX, 314 + faceYOffset - 100, `face_${oppData.id}`);
+                oppFighter.face.setDisplaySize(45, 45);
+                const maskShape = this.add.graphics().fillCircle(0, 0, 22.5).setVisible(false);
                 oppFighter.face.setMask(maskShape.createGeometryMask());
                 oppFighter.maskShape = maskShape;
             }
@@ -266,30 +316,56 @@ export default class FighterGame extends Phaser.Scene {
             const oppX = oppSide === 'left' ? 180 : 620;
             const cpu = {
                 id: 'CPU',
-                sprite: this.physics.add.sprite(oppX, 330, 'fighter_CPU'),
+                sprite: this.physics.add.sprite(oppX, 314, 'fighter_CPU'),
                 startX: oppX,
-                startY: 330,
+                startY: 314,
                 startFlipX: oppSide === 'right',
                 isLocal: false,
                 isCPU: true,
                 state: 'idle',
                 hasHit: false,
-                spec: { stats: { str: 2, spd: 2, res: 2 } },
+                spec: { stats: { str: 2, spd: 2, res: 2 }, headPos: { top: '15%', left: '48%' }, fHeight: 192 },
                 cpuTimer: 90
             };
             cpu.sprite.setCollideWorldBounds(true);
             cpu.sprite.setFlipX(oppSide === 'right');
-            cpu.sprite.setTint(0xaaaaaa);
+            cpu.sprite.setTint(0xffaaaa); // Ligero tinte agresivo
+            
+            if (this.textures.exists('face_CPU')) {
+                const faceYOffset = getHeadOffset(cpu.spec);
+                
+                // Avatar encima de la cabeza
+                cpu.face = this.add.image(oppX, 314 + faceYOffset - 100, 'face_CPU');
+                cpu.face.setDisplaySize(45, 45);
+                const maskShape = this.add.graphics().fillCircle(0, 0, 22.5).setVisible(false);
+                cpu.face.setMask(maskShape.createGeometryMask());
+                cpu.maskShape = maskShape;
+            }
+            
             this.players['CPU'] = cpu;
         }
     }
 
     setupPhysics() {
-        const ground = this.add.rectangle(400, 390, 800, 20, 0x000, 0);
+        // Suelo físico alineado con el visual bajo (410)
+        const ground = this.add.rectangle(400, 420, 800, 20, 0x000, 0);
         this.physics.add.existing(ground, true);
+        
+        const sprites = [];
         Object.values(this.players).forEach(p => {
             this.physics.add.collider(p.sprite, ground);
+            
+            // Ajustar el body de colisión para que puedan acercarse pero no superponerse
+            p.sprite.body.setSize(70, 180);
+            p.sprite.body.setOffset(29, 12);
+            
+            sprites.push(p.sprite);
         });
+
+        // Colisión entre jugadores para evitar que se superpongan
+        if (sprites.length >= 2) {
+            this.physics.add.collider(sprites[0], sprites[1]);
+        }
     }
 
     setupInputs() {
@@ -458,11 +534,11 @@ export default class FighterGame extends Phaser.Scene {
     handleCPU(cpu, player) {
         // H-3: CPU Difficulty configs
         const CPU_CONFIGS = {
-            facil:   { reactionMin: 50, reactionMax: 70, blockChance: 0.10, comboChance: 0.00, jumpChance: 0.03 },
-            normal:  { reactionMin: 15, reactionMax: 30, blockChance: 0.35, comboChance: 0.00, jumpChance: 0.05 },
-            dificil: { reactionMin:  5, reactionMax: 15, blockChance: 0.55, comboChance: 0.30, jumpChance: 0.08 },
+            facil:   { reactionMin: 30, reactionMax: 50, blockChance: 0.40, comboChance: 0.20, jumpChance: 0.10 },
+            normal:  { reactionMin: 10, reactionMax: 20, blockChance: 0.70, comboChance: 0.50, jumpChance: 0.15 },
+            dificil: { reactionMin:  1, reactionMax:  5, blockChance: 0.95, comboChance: 0.90, jumpChance: 0.30 },
         };
-        const diff = CPU_CONFIGS[this.cpuDifficulty] || CPU_CONFIGS.normal;
+        const diff = CPU_CONFIGS[this.cpuDifficulty] || CPU_CONFIGS.dificil; // Make default harder just in case
 
         if (cpu.state === 'ko' || cpu.state === 'hit' || cpu.state === 'attacking') return;
 
@@ -549,10 +625,11 @@ export default class FighterGame extends Phaser.Scene {
             moved = true;
         } else {
             local.sprite.setVelocityX(0);
+            if (local.state === 'blocking') local.state = 'idle'; // FIX: Reset blocking state when button is released
         }
 
         if (onGround && !local.wasOnGround) {
-            this.emitDust(local.sprite.x, 390); // landed
+            this.emitDust(local.sprite.x, 410); // landed
             if (this.sound_mgr) this.sound_mgr.sfxLand(); // N-4
         }
 
@@ -560,7 +637,7 @@ export default class FighterGame extends Phaser.Scene {
             local.sprite.setVelocityY(-550);
             anim = 'jump';
             moved = true;
-            this.emitDust(local.sprite.x, 390); // jumped
+            this.emitDust(local.sprite.x, 410); // jumped
             if (this.sound_mgr) this.sound_mgr.sfxJump(); // N-4
         }
 
@@ -569,14 +646,23 @@ export default class FighterGame extends Phaser.Scene {
         if (moved || anim !== local.lastAnim) {
             local.sprite.play(`${anim}_${local.id}`, true);
             
-            // Throttle socket emits to 20 updates per second (50ms) to prevent network flooding
+            // Throttle socket emits to 33 updates per second (30ms) to prevent network flooding but keep it highly responsive
             const now = this.time.now;
-            if (!local.lastEmitTime || now - local.lastEmitTime >= 50 || anim !== local.lastAnim) {
-                this.socket.emit('player_move', {
-                    roomId: this.roomId, id: this.playerData.id,
-                    x: local.sprite.x, y: local.sprite.y,
-                    anim: anim, flip: local.sprite.flipX
-                });
+            if (!local.lastEmitTime || now - local.lastEmitTime >= 30 || anim !== local.lastAnim) {
+                // Usar volatile para enviar datos sin buffering (mejor latencia en juegos de pelea)
+                if (this.socket.volatile) {
+                    this.socket.volatile.emit('player_move', {
+                        roomId: this.roomId, id: this.playerData.id,
+                        x: local.sprite.x, y: local.sprite.y,
+                        anim: anim, flip: local.sprite.flipX
+                    });
+                } else {
+                    this.socket.emit('player_move', {
+                        roomId: this.roomId, id: this.playerData.id,
+                        x: local.sprite.x, y: local.sprite.y,
+                        anim: anim, flip: local.sprite.flipX
+                    });
+                }
                 local.lastEmitTime = now;
             }
             local.lastAnim = anim;
@@ -659,7 +745,7 @@ export default class FighterGame extends Phaser.Scene {
                 // --- Combo multiplier ---
                 let isCombo = false;
                 if (attacker.comboCount >= 3) {
-                    rawDamage *= 1.5;
+                    rawDamage *= 1.2; // Reducido el daño de golpes triples
                     isCombo = true;
                     attacker.comboCount = 0;
                 }
@@ -669,8 +755,12 @@ export default class FighterGame extends Phaser.Scene {
                 let finalDamage = rawDamage - (defender.spec.stats?.res || 0);
                 if (defender.spec.style === 'Defensivo') finalDamage *= 0.8;
                 if (defender.spec.style === 'Agresivo')  finalDamage *= 1.1;
-                if (defender.state === 'blocking')        finalDamage *= 0.3;
-                finalDamage = Math.max(1, Math.round(finalDamage));
+                
+                if (defender.state === 'blocking') {
+                    finalDamage = 0;
+                } else {
+                    finalDamage = Math.max(1, Math.round(finalDamage));
+                }
 
                 // Emit the pre-calculated damage so defender doesn't recalculate
                 this.socket.emit('player_hit', {
@@ -702,11 +792,25 @@ export default class FighterGame extends Phaser.Scene {
             finalDamage = damage - (target.spec.stats?.res || 0);
             if (target.spec.style === 'Defensivo') finalDamage *= 0.8;
             if (target.spec.style === 'Agresivo')  finalDamage *= 1.1;
-            if (target.state === 'blocking')        finalDamage *= 0.3;
-            finalDamage = Math.max(1, Math.round(finalDamage));
+            
+            if (target.state === 'blocking') {
+                finalDamage = 0;
+            } else {
+                finalDamage = Math.max(1, Math.round(finalDamage));
+            }
         }
 
         const prevState = target.state; // N-4 fix: capture state before overwrite
+        
+        if (finalDamage === 0) {
+            // Just show block impact
+            target.sprite.play(`block_${target.id}`, true);
+            if (this.sound_mgr) this.sound_mgr.sfxBlock();
+            const dir = target.sprite.x > attackerX ? 1 : -1;
+            target.sprite.setVelocityX(dir * 100);
+            return; // don't update HP, don't enter hit state
+        }
+
         target.state = 'hit';
         target.sprite.play(`hit_${target.id}`, true);
         target.sprite.setTint(0xff0000);
@@ -783,11 +887,27 @@ export default class FighterGame extends Phaser.Scene {
     syncGraphics() {
         Object.values(this.players).forEach(p => {
             if (p.face) {
-                p.face.x = p.sprite.x;
+                // Add tiny offset based on animation to hide the original face underneath
+                let animOffsetY = 0;
+                let animOffsetX = 0;
+                const anim = p.sprite.anims.currentAnim?.key || '';
+                
+                // Adjust per-animation offsets
+                if (anim.includes('hit')) { animOffsetY = 15; animOffsetX = -15; }
+                if (anim.includes('block')) { animOffsetY = 10; animOffsetX = -5; }
+                if (anim.includes('ko')) animOffsetY = 35;
+                if (anim.includes('jump')) animOffsetY = -8;
+                if (anim.includes('jab') || anim.includes('hook') || anim.includes('kick')) { animOffsetX = 10; }
+
                 const topPct = p.spec?.headPos ? parseFloat(p.spec.headPos.top) / 100 : 0.20;
                 const h = p.spec?.fHeight || 192;
-                const faceYOffset = (-h / 2) + (h * topPct);
-                p.face.y = p.sprite.y + faceYOffset;
+                const baseFaceYOffset = (-h / 2) + (h * topPct);
+                
+                const dir = p.sprite.flipX ? -1 : 1;
+                
+                // Actualizar avatar (encima de la cabeza)
+                p.face.x = p.sprite.x + (animOffsetX * dir);
+                p.face.y = p.sprite.y + baseFaceYOffset + animOffsetY - 100;
                 p.face.setFlipX(p.sprite.flipX);
                 
                 if (p.maskShape) {

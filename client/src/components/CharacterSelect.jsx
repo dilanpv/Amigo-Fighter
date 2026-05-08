@@ -34,33 +34,41 @@ const CHARACTERS = [
     id: 'ninja', 
     name: 'EL NINJA', 
     img: '/assets/EL NINJA.png',
+    portrait: '/assets/El_Ninja_seleccion.png',
     cols: 11, rows: 4, 
     fWidth: 128, fHeight: 192,
-    headPos: { top: '20%', left: '50%' } 
+    headPos: { top: '20%', left: '50%' },
+    portraitHeadPos: { top: '16%', left: '49%' }
   },
   { 
     id: 'campeon', 
     name: 'EL CAMPEÓN', 
     img: '/assets/EL CAMPEÓN.png', 
+    portrait: '/assets/El_Campeón_seleccion.png',
     cols: 11, rows: 4, 
     fWidth: 128, fHeight: 192,
-    headPos: { top: '20%', left: '50%' } 
+    headPos: { top: '20%', left: '50%' },
+    portraitHeadPos: { top: '17%', left: '50%' }
   },
   { 
     id: 'agresivo', 
     name: 'EL AGRESIVO', 
     img: '/assets/EL AGRESIVO.png', 
+    portrait: '/assets/El_Agresivo_seleccion.png',
     cols: 11, rows: 4, 
     fWidth: 128, fHeight: 192,
-    headPos: { top: '20%', left: '50%' } 
+    headPos: { top: '20%', left: '50%' },
+    portraitHeadPos: { top: '15%', left: '49%' }
   },
   { 
     id: 'luchador', 
     name: 'LUCHADOR', 
     img: '/assets/LUCHADOR.png', 
+    portrait: '/assets/Luchador_seleccion.png',
     cols: 11, rows: 4, 
     fWidth: 128, fHeight: 192,
-    headPos: { top: '20%', left: '50%' } 
+    headPos: { top: '20%', left: '50%' },
+    portraitHeadPos: { top: '16%', left: '49%' }
   },
 ];
 
@@ -131,10 +139,10 @@ function CharacterSelect({ playerData, opponentInfo, onReady, onBack }) {
   };
 
   return (
-    <div className="screen min-h-[100dvh] p-2 md:p-4 bg-gradient-to-br from-neutral-900 to-black overflow-y-auto">
+    <div className="screen h-[100dvh] flex flex-col p-2 md:p-4 bg-gradient-to-br from-neutral-900 to-black overflow-hidden">
       
       {/* Header */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-4 md:mb-6 w-full max-w-6xl mx-auto mt-4 animate-fade-in-up">
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-2 md:mb-4 w-full max-w-6xl mx-auto mt-2 animate-fade-in-up flex-shrink-0">
           <button onClick={onBack} className="bg-neutral-800 hover:bg-neutral-700 text-white px-4 py-2 text-xl md:text-2xl font-['Bebas_Neue'] tracking-wider rounded border border-neutral-600 transition-colors w-fit shadow-md">
             ← VOLVER
           </button>
@@ -174,7 +182,7 @@ function CharacterSelect({ playerData, opponentInfo, onReady, onBack }) {
         </div>
       )}
 
-      <div className="flex flex-col lg:flex-row gap-4 md:gap-6 w-full max-w-6xl mx-auto flex-1 min-h-0 pb-10 animate-fade-in-up" style={{ animationDelay: '0.1s' }}>
+      <div className="flex flex-col lg:flex-row gap-4 md:gap-6 w-full max-w-6xl mx-auto flex-1 min-h-0 pb-2 md:pb-4 animate-fade-in-up" style={{ animationDelay: '0.1s' }}>
         
         {/* LEFT: CHARACTER GRID & STATS */}
         <div className={`flex-1 flex flex-col gap-4 md:gap-6 bg-neutral-950/80 backdrop-blur-md border border-neutral-800 p-4 md:p-6 rounded-lg shadow-2xl overflow-y-auto ${mobileStep === 1 ? 'flex' : 'hidden lg:flex'}`}>
@@ -189,8 +197,17 @@ function CharacterSelect({ playerData, opponentInfo, onReady, onBack }) {
                     className={`relative aspect-[3/4] md:aspect-[2/3] bg-neutral-900 border-2 cursor-pointer overflow-hidden group transition-all duration-300 rounded-md
                       ${selectedChar.id === char.id ? 'border-red-500 shadow-[0_0_20px_rgba(255,60,60,0.6)] scale-105 z-10' : 'border-neutral-700 hover:border-red-400 hover:scale-[1.02]'}`}
                 >
+                    <img 
+                      src={encodeURI(char.portrait)} 
+                      alt={char.name}
+                      className="w-full h-full object-cover opacity-80 group-hover:opacity-100 transition-opacity"
+                      onError={(e) => {
+                          e.target.style.display = 'none';
+                          e.target.nextSibling.style.display = 'block';
+                      }}
+                    />
                     <div 
-                      className="absolute inset-0 opacity-80 group-hover:opacity-100 transition-opacity"
+                      className="hidden absolute inset-0 opacity-80 group-hover:opacity-100 transition-opacity"
                       style={{
                         backgroundImage: `url('${encodeURI(char.img)}')`,
                         backgroundSize: '1100% 400%',
@@ -263,30 +280,32 @@ function CharacterSelect({ playerData, opponentInfo, onReady, onBack }) {
           <div className="relative flex-1 bg-black border border-neutral-800 rounded-md overflow-hidden flex items-center justify-center min-h-[200px] md:min-h-[300px] shadow-inner group">
             <div className="absolute inset-0 bg-gradient-to-t from-red-900/20 to-transparent pointer-events-none z-0"></div>
             
-            <div className="relative transition-transform duration-500 group-hover:scale-105" style={{ width: '128px', height: '192px', transform: 'scale(1.8)' }}>
-                <div 
-                    className="w-full h-full opacity-95"
-                    style={{
-                        backgroundImage: `url('${encodeURI(selectedChar.img)}')`,
-                        backgroundSize: '1100% 400%',
-                        backgroundPosition: '0% 0%',
-                        backgroundRepeat: 'no-repeat'
-                    }}
-                />
-                
-                {face && (
-                <div 
-                    className="absolute transform -translate-x-1/2 -translate-y-1/2 z-10 border-2 border-red-500 rounded-full shadow-[0_0_15px_rgba(255,0,0,0.8)] overflow-hidden" 
-                    style={{ 
-                        top: selectedChar.headPos.top,
-                        left: selectedChar.headPos.left,
-                        width: '80px', 
-                        height: '80px'
-                    }}
-                >
-                    <img src={face} alt="Rostro" className="w-full h-full object-cover" />
+            <div className="relative h-full flex items-center justify-center transition-transform duration-500 scale-[1.1] lg:scale-100 group-hover:scale-[1.05]" style={{ transformOrigin: `${selectedChar.portraitHeadPos.left} ${selectedChar.portraitHeadPos.top}` }}>
+                <div className="relative h-full inline-block">
+                    <img 
+                        src={encodeURI(selectedChar.portrait)} 
+                        alt={selectedChar.name}
+                        className="h-full w-auto object-contain opacity-90"
+                        onError={(e) => {
+                            e.target.style.display = 'none';
+                            e.target.nextSibling.style.display = 'block';
+                        }}
+                    />
+                    
+                    {face && (
+                    <div 
+                        className="absolute transform -translate-x-1/2 -translate-y-1/2 z-10 border-2 border-red-500 rounded-full shadow-[0_0_15px_rgba(255,0,0,0.8)] overflow-hidden" 
+                        style={{ 
+                            top: `calc(${selectedChar.portraitHeadPos.top} - 8%)`,
+                            left: selectedChar.portraitHeadPos.left,
+                            width: '22%', // Aumentado de 16% a 22%
+                            aspectRatio: '1/1'
+                        }}
+                    >
+                        <img src={face} alt="Rostro" className="w-full h-full object-cover" />
+                    </div>
+                    )}
                 </div>
-                )}
             </div>
             
             <div className="absolute bottom-2 right-2 md:bottom-4 md:right-4 bg-red-600 px-3 py-0.5 md:px-4 md:py-1 text-base md:text-3xl font-['Bebas_Neue'] tracking-widest text-white shadow-lg border border-red-400 z-20">

@@ -362,7 +362,7 @@ function GameView({ roomId, playerData, gameState, onEnd }) {
         <div className="w-[30%] md:w-[40%] max-w-[420px] pointer-events-auto">
           <div className="flex flex-row-reverse items-center gap-1 md:gap-2 text-right">
             <div className="w-7 h-7 md:w-16 md:h-16 border border-red-500 md:border-2 bg-black overflow-hidden shadow-[0_0_15px_#ff3c3c] flex-shrink-0 rounded-full">
-              {opponent?.face ? <img src={opponent.face} className="w-full h-full object-cover" alt="Player 2" /> : <div className="w-full h-full bg-red-900" />}
+              {opponent?.face ? <img src={opponent.face} className="w-full h-full object-cover" alt="Player 2" /> : <img src="https://api.dicebear.com/7.x/pixel-art/svg?seed=CPU_Fighter" className="w-full h-full object-cover" alt="CPU" />}
             </div>
             <div className="flex-1 w-full min-w-0">
               <div className="font-['Bebas_Neue'] text-[10px] md:text-xl mb-0 md:mb-1 truncate text-white text-right tracking-wider">{opponent?.name || 'RETADOR'}</div>
