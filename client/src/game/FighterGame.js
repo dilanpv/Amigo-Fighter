@@ -26,12 +26,12 @@ export default class FighterGame extends Phaser.Scene {
     }
 
     preload() {
-        // Cache buster for new assets
-        const cb = '?v=' + Date.now();
+        // Removed cache buster as it can cause issues on some mobile browsers
+        // const cb = ''; 
         
         this.gameState.players.forEach(p => {
             const spec = p.character || this.charSpec;
-            this.load.spritesheet(`fighter_${p.id}`, encodeURI(spec.img || '/assets/LUCHADOR.png') + cb, {
+            this.load.spritesheet(`fighter_${p.id}`, encodeURI(spec.img || '/assets/LUCHADOR.png'), {
                 frameWidth: spec.fWidth || 128,
                 frameHeight: spec.fHeight || 192
             });
@@ -42,7 +42,7 @@ export default class FighterGame extends Phaser.Scene {
         });
         
         // Carga al Agresivo para la CPU
-        this.load.spritesheet('fighter_CPU', encodeURI('/assets/EL AGRESIVO.png') + cb, { frameWidth: 128, frameHeight: 192 });
+        this.load.spritesheet('fighter_CPU', encodeURI('/assets/EL AGRESIVO.png'), { frameWidth: 128, frameHeight: 192 });
         // Carga avatar por defecto para la CPU
         const cpuFaceUrl = `https://api.dicebear.com/7.x/pixel-art/svg?seed=CPU_Fighter`;
         this.load.image('face_CPU', cpuFaceUrl);
@@ -65,6 +65,11 @@ export default class FighterGame extends Phaser.Scene {
         for (let i = 0; i < roomStr.length; i++) seed += roomStr.charCodeAt(i);
         this.selectedStage = this.stages[seed % this.stages.length];
         this.load.image('bg_stage', encodeURI(`/assets/Escenarios/${this.selectedStage}`));
+
+        // Error logging for mobile debugging
+        this.load.on('loaderror', (file) => {
+            console.error('Error loading asset:', file.src, file.key);
+        });
     }
 
     create() {
@@ -267,6 +272,7 @@ export default class FighterGame extends Phaser.Scene {
         };
         localFighter.sprite.setCollideWorldBounds(true);
         localFighter.sprite.setFlipX(side === 'right');
+        localFighter.sprite.setDepth(10); // Ensure characters are above background
         
         if (this.textures.exists(`face_${p.id}`)) {
             const faceYOffset = getHeadOffset(localFighter.spec);
@@ -298,6 +304,7 @@ export default class FighterGame extends Phaser.Scene {
             };
             oppFighter.sprite.setCollideWorldBounds(true);
             oppFighter.sprite.setFlipX(oppSide === 'right');
+            oppFighter.sprite.setDepth(10);
             
             if (this.textures.exists(`face_${oppData.id}`)) {
                 const faceYOffset = getHeadOffset(oppFighter.spec);
@@ -329,6 +336,7 @@ export default class FighterGame extends Phaser.Scene {
             };
             cpu.sprite.setCollideWorldBounds(true);
             cpu.sprite.setFlipX(oppSide === 'right');
+            cpu.sprite.setDepth(10);
             cpu.sprite.setTint(0xffaaaa); // Ligero tinte agresivo
             
             if (this.textures.exists('face_CPU')) {

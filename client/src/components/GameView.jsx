@@ -196,6 +196,16 @@ function GameView({ roomId, playerData, gameState, onEnd }) {
       };
 
       const game = new Phaser.Game(config);
+      
+      // M-9: Force resize on orientation change for mobile
+      const handleResize = () => {
+        if (game && game.scale) {
+          game.scale.refresh();
+        }
+      };
+      window.addEventListener('resize', handleResize);
+      window.addEventListener('orientationchange', handleResize);
+
       // N-4: Pass soundManager instance to Phaser scene
       game.scene.start('FighterGame', { socket, roomId, playerData, gameState, soundManager: soundRef.current });
       // M-1: Show round announce when game starts
@@ -248,6 +258,9 @@ function GameView({ roomId, playerData, gameState, onEnd }) {
     }
 
     return () => {
+      window.removeEventListener('resize', handleResize);
+      window.removeEventListener('orientationchange', handleResize);
+
       if (gameRef.current) {
         gameRef.current.destroy(true);
         gameRef.current = null;
