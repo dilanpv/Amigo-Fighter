@@ -14,6 +14,7 @@ export default class FighterGame extends Phaser.Scene {
         this.players = {};
         this.hp = { p1: 100, p2: 100 };
         this.gameOver = false;
+        this.matchStarted = false; // V-16: Wait for tutorial button to start logic
         this.cpuDifficulty = data.cpuDifficulty || 'normal'; // H-3
         this.sound_mgr = data.soundManager || null; // N-4: shared SoundManager instance
         
@@ -41,11 +42,12 @@ export default class FighterGame extends Phaser.Scene {
             }
         });
         
-        // Carga al Agresivo para la CPU
-        this.load.spritesheet('fighter_CPU', encodeURI('/assets/EL AGRESIVO.png'), { frameWidth: 128, frameHeight: 192 });
-        // Carga avatar por defecto para la CPU
-        const cpuFaceUrl = `https://api.dicebear.com/7.x/pixel-art/svg?seed=CPU_Fighter`;
-        this.load.image('face_CPU', cpuFaceUrl);
+        // Carga el personaje aleatorio para la CPU
+        const cpuSpec = this.gameState.cpuCharacter || { img: '/assets/EL_AGRESIVO.png', fWidth: 128, fHeight: 192 };
+        this.load.spritesheet('fighter_CPU', encodeURI(cpuSpec.img), { 
+            frameWidth: cpuSpec.fWidth || 128, 
+            frameHeight: cpuSpec.fHeight || 192 
+        });
         
         // Escenarios aleatorios
         this.stages = [
@@ -94,6 +96,12 @@ export default class FighterGame extends Phaser.Scene {
         this.game.events.on('triggerEmote', (emote) => {
             this.showEmote(this.playerData.id, emote);
             this.socket.emit('player_emote', { roomId: this.roomId, emote });
+        });
+
+        // V-16: Listen for "Entrar al ring" signal from UI
+        this.game.events.once('startMatch', () => {
+            this.matchStarted = true;
+            this.resetPositions(); // Trigger first "FIGHT!" and position reset
         });
     }
 
@@ -217,15 +225,15 @@ export default class FighterGame extends Phaser.Scene {
 
             const anims = [
                 { key: 'idle', start: 0, end: safeF(3), rate: 8, repeat: -1 },
-                { key: 'walk_fwd', start: safeF(4), end: safeF(9), rate: 10, repeat: -1 },
-                { key: 'jump', start: safeF(10), end: safeF(12), rate: 8, repeat: 0 },
-                { key: 'jab', start: safeF(13), end: safeF(16), rate: 15, repeat: 0 },
-                { key: 'hook', start: safeF(17), end: safeF(20), rate: 12, repeat: 0 },
-                { key: 'kick', start: safeF(21), end: safeF(24), rate: 12, repeat: 0 },
-                { key: 'hit', start: safeF(25), end: safeF(27), rate: 10, repeat: 0 },
-                { key: 'special', start: safeF(28), end: safeF(31), rate: 9, repeat: 0 },
-                { key: 'block', start: safeF(32), end: safeF(33), rate: 6, repeat: 0 },
-                { key: 'ko', start: safeF(34), end: safeF(37), rate: 8, repeat: 0 },
+                { key: 'walk_fwd', start: safeF(4), end: safeF(10), rate: 10, repeat: -1 },
+                { key: 'jump', start: safeF(11), end: safeF(13), rate: 8, repeat: 0 },
+                { key: 'jab', start: safeF(14), end: safeF(17), rate: 15, repeat: 0 },
+                { key: 'hook', start: safeF(18), end: safeF(21), rate: 12, repeat: 0 },
+                { key: 'kick', start: safeF(22), end: safeF(25), rate: 12, repeat: 0 },
+                { key: 'hit', start: safeF(26), end: safeF(30), rate: 10, repeat: 0 },
+                { key: 'special', start: safeF(31), end: safeF(33), rate: 9, repeat: 0 },
+                { key: 'block', start: safeF(33), end: safeF(34), rate: 6, repeat: 0 },
+                { key: 'ko', start: safeF(34), end: safeF(37), rate: 6, repeat: 0 },
             ];
             
             anims.forEach(a => {
@@ -273,6 +281,12 @@ export default class FighterGame extends Phaser.Scene {
         localFighter.sprite.setCollideWorldBounds(true);
         localFighter.sprite.setFlipX(side === 'right');
         localFighter.sprite.setDepth(10); // Ensure characters are above background
+
+        // V-17: Máscara negra para la cara (re-aplicado)
+        localFighter.faceMask = this.add.graphics();
+        localFighter.faceMask.fillStyle(0x000000, 0.95);
+        localFighter.faceMask.fillCircle(0, 0, 20);
+        localFighter.faceMask.setDepth(11);
         
         if (this.textures.exists(`face_${p.id}`)) {
             const faceYOffset = getHeadOffset(localFighter.spec);
@@ -281,7 +295,12 @@ export default class FighterGame extends Phaser.Scene {
             localFighter.face = this.add.image(x, 314 + faceYOffset - 100, `face_${p.id}`);
             localFighter.face.setDisplaySize(45, 45); 
             const maskShape = this.add.graphics().fillCircle(0, 0, 22.5).setVisible(false);
-            localFighter.face.setMask(maskShape.createGeometryMask());
+            
+            // Phaser 4 WebGL Masking
+            if (localFighter.face.enableFilters) {
+                localFighter.face.enableFilters().filters.external.addMask(maskShape);
+            }
+            
             localFighter.maskShape = maskShape;
         }
         this.players[p.id] = localFighter;
@@ -313,7 +332,12 @@ export default class FighterGame extends Phaser.Scene {
                 oppFighter.face = this.add.image(oppX, 314 + faceYOffset - 100, `face_${oppData.id}`);
                 oppFighter.face.setDisplaySize(45, 45);
                 const maskShape = this.add.graphics().fillCircle(0, 0, 22.5).setVisible(false);
-                oppFighter.face.setMask(maskShape.createGeometryMask());
+                
+                // Phaser 4 WebGL Masking
+                if (oppFighter.face.enableFilters) {
+                    oppFighter.face.enableFilters().filters.external.addMask(maskShape);
+                }
+                
                 oppFighter.maskShape = maskShape;
             }
             this.players[oppData.id] = oppFighter;
@@ -331,7 +355,7 @@ export default class FighterGame extends Phaser.Scene {
                 isCPU: true,
                 state: 'idle',
                 hasHit: false,
-                spec: { stats: { str: 2, spd: 2, res: 2 }, headPos: { top: '15%', left: '48%' }, fHeight: 192 },
+                spec: this.gameState.cpuCharacter || { stats: { str: 2, spd: 2, res: 2 }, headPos: { top: '15%', left: '48%' }, fHeight: 192 },
                 cpuTimer: 90
             };
             cpu.sprite.setCollideWorldBounds(true);
@@ -339,16 +363,15 @@ export default class FighterGame extends Phaser.Scene {
             cpu.sprite.setDepth(10);
             cpu.sprite.setTint(0xffaaaa); // Ligero tinte agresivo
             
-            if (this.textures.exists('face_CPU')) {
-                const faceYOffset = getHeadOffset(cpu.spec);
-                
-                // Avatar encima de la cabeza
-                cpu.face = this.add.image(oppX, 314 + faceYOffset - 100, 'face_CPU');
-                cpu.face.setDisplaySize(45, 45);
-                const maskShape = this.add.graphics().fillCircle(0, 0, 22.5).setVisible(false);
-                cpu.face.setMask(maskShape.createGeometryMask());
-                cpu.maskShape = maskShape;
-            }
+            // El avatar de CPU se ha eliminado por petición del usuario
+            cpu.face = null;
+
+            // V-17: Máscara negra para la cara (re-aplicado)
+            const cpuHeadOffset = getHeadOffset(cpu.spec);
+            cpu.faceMask = this.add.graphics();
+            cpu.faceMask.fillStyle(0x000000, 0.95);
+            cpu.faceMask.fillCircle(0, 0, 20);
+            cpu.faceMask.setDepth(11);
             
             this.players['CPU'] = cpu;
         }
@@ -497,9 +520,16 @@ export default class FighterGame extends Phaser.Scene {
             p.sprite.setVelocity(0, 0);
 
             if (data && data.loserId === p.id) {
-                p.state = 'ko';
+                p.state = 'falling';
                 p.sprite.play(`ko_${p.id}`, true);
-                p.sprite.setTint(0xaaaaaa);
+                p.sprite.setTint(0xff6666);
+                
+                // V-17: Animación de caída lenta antes del K.O. final
+                this.time.delayedCall(800, () => {
+                    p.sprite.anims.pause(); // Se queda en el suelo
+                    p.state = 'ko';
+                    p.sprite.setTint(0x666666);
+                });
             } else {
                 p.state = 'idle';
                 p.sprite.play(`idle_${p.id}`, true);
@@ -508,7 +538,7 @@ export default class FighterGame extends Phaser.Scene {
     }
 
     update() {
-        if (this.gameOver) return;
+        if (!this.matchStarted || this.gameOver) return;
         const local = this.players[this.playerData.id];
         if (!local || local.state === 'hit' || local.state === 'ko') return;
 
@@ -529,8 +559,8 @@ export default class FighterGame extends Phaser.Scene {
         // M-2: Lag compensation (Client-side interpolation)
         Object.values(this.players).forEach(p => {
             if (!p.isLocal && !p.isCPU && p.targetX !== undefined && p.state !== 'attacking' && p.state !== 'hit' && p.state !== 'ko') {
-                p.sprite.x = Phaser.Math.Linear(p.sprite.x, p.targetX, 0.4);
-                p.sprite.y = Phaser.Math.Linear(p.sprite.y, p.targetY, 0.4);
+                p.sprite.x = Phaser.Math.Linear(p.sprite.x, p.targetX, 0.75); // Aumentado de 0.4 a 0.75 para mayor respuesta
+                p.sprite.y = Phaser.Math.Linear(p.sprite.y, p.targetY, 0.75);
                 
                 // Snap if very close
                 if (Math.abs(p.sprite.x - p.targetX) < 1) p.sprite.x = p.targetX;
@@ -654,9 +684,9 @@ export default class FighterGame extends Phaser.Scene {
         if (moved || anim !== local.lastAnim) {
             local.sprite.play(`${anim}_${local.id}`, true);
             
-            // Throttle socket emits to 33 updates per second (30ms) to prevent network flooding but keep it highly responsive
+            // Throttle socket emits to ~22 updates per second (45ms) to prevent network flooding on slow connections
             const now = this.time.now;
-            if (!local.lastEmitTime || now - local.lastEmitTime >= 30 || anim !== local.lastAnim) {
+            if (!local.lastEmitTime || now - local.lastEmitTime >= 45 || anim !== local.lastAnim) {
                 // Usar volatile para enviar datos sin buffering (mejor latencia en juegos de pelea)
                 if (this.socket.volatile) {
                     this.socket.volatile.emit('player_move', {
@@ -706,12 +736,12 @@ export default class FighterGame extends Phaser.Scene {
         const currentAnim = attacker.sprite.anims.currentAnim;
         if (!currentAnim) return;
 
-        // H-2: Per-attack hitbox configuration
+        // H-2: Per-attack hitbox configuration (Ajustado para mayor precisión/menor alcance)
         const ATTACK_HITBOXES = {
-            jab:     { xOffset: 60, yOffset:  -5, halfW: 45, halfH: 50, activeFrom: 2 },
-            hook:    { xOffset: 70, yOffset:  -5, halfW: 55, halfH: 65, activeFrom: 3 },
-            kick:    { xOffset: 80, yOffset:  20, halfW: 60, halfH: 75, activeFrom: 3 },
-            special: { xOffset: 55, yOffset: -20, halfW: 65, halfH: 85, activeFrom: 2 },
+            jab:     { xOffset: 45, yOffset:  -5, halfW: 25, halfH: 35, activeFrom: 2 },
+            hook:    { xOffset: 55, yOffset:  -5, halfW: 30, halfH: 45, activeFrom: 3 },
+            kick:    { xOffset: 65, yOffset:  20, halfW: 35, halfH: 55, activeFrom: 3 },
+            special: { xOffset: 50, yOffset: -20, halfW: 40, halfH: 65, activeFrom: 2 },
         };
         const attackType = Object.keys(ATTACK_HITBOXES).find(k => currentAnim.key.includes(k)) || 'jab';
         const hb = ATTACK_HITBOXES[attackType];
@@ -921,6 +951,43 @@ export default class FighterGame extends Phaser.Scene {
                 if (p.maskShape) {
                     p.maskShape.x = p.face.x;
                     p.maskShape.y = p.face.y;
+                }
+            }
+
+            // V-17: Sincronizar máscara negra
+            if (p.faceMask) {
+                let animOffsetY = 0;
+                let animOffsetX = 0;
+                const anim = p.sprite.anims.currentAnim?.key || '';
+                
+                // Ajustes de posición de la máscara según la pose
+                if (anim.includes('hit')) { animOffsetY = 15; animOffsetX = -10; }
+                if (anim.includes('block')) { animOffsetY = 10; animOffsetX = -5; }
+                if (anim.includes('ko') || anim.includes('falling')) {
+                    animOffsetY = 45; 
+                    animOffsetX = -10;
+                }
+                if (anim.includes('jump')) animOffsetY = -12;
+                if (anim.includes('jab') || anim.includes('hook') || anim.includes('kick')) { 
+                    animOffsetX = 12; 
+                }
+
+                const topPct = p.spec?.headPos ? parseFloat(p.spec.headPos.top) / 100 : 0.20;
+                const leftPct = p.spec?.headPos ? parseFloat(p.spec.headPos.left) / 100 : 0.48;
+                const h = p.spec?.fHeight || 192;
+                const w = p.spec?.fWidth || 128;
+                
+                const baseFaceYOffset = (-h / 2) + (h * topPct);
+                const baseFaceXOffset = (-w / 2) + (w * leftPct);
+                
+                const dir = p.sprite.flipX ? -1 : 1;
+
+                p.faceMask.x = p.sprite.x + (baseFaceXOffset * dir) + (animOffsetX * dir);
+                p.faceMask.y = p.sprite.y + baseFaceYOffset + animOffsetY;
+                
+                // Si está cayendo, la máscara debe seguir el cuerpo al suelo
+                if (p.state === 'falling' || p.state === 'ko') {
+                    p.faceMask.y += 20;
                 }
             }
         });

@@ -31,16 +31,8 @@ function GameView({ roomId, playerData, gameState, onEnd }) {
   const roundAnnounceRef = useRef(null);
 
   useEffect(() => {
-    // M-6: Check if tutorial was already seen
-    const tutorialSeen = localStorage.getItem('af_tutorial_seen');
-    if (!tutorialSeen) {
-      setShowTutorial(true);
-      const timer = setTimeout(() => {
-        setShowTutorial(false);
-        localStorage.setItem('af_tutorial_seen', 'true');
-      }, 4500);
-      return () => clearTimeout(timer);
-    }
+    // M-6: Always show tutorial before match starts
+    setShowTutorial(true);
   }, []);
 
   const triggerRoundAnnounce = () => {
@@ -172,6 +164,13 @@ function GameView({ roomId, playerData, gameState, onEnd }) {
   }, [timeLeft]);
 
   useEffect(() => {
+    // M-9: Define handleResize at useEffect scope so cleanup has access
+    const handleResize = () => {
+      if (gameRef.current && gameRef.current.scale) {
+        gameRef.current.scale.refresh();
+      }
+    };
+
     if (!gameRef.current) {
       // N-4: Initialize SoundManager (must be triggered by user interaction context)
       if (!soundRef.current) {
@@ -197,12 +196,6 @@ function GameView({ roomId, playerData, gameState, onEnd }) {
 
       const game = new Phaser.Game(config);
       
-      // M-9: Force resize on orientation change for mobile
-      const handleResize = () => {
-        if (game && game.scale) {
-          game.scale.refresh();
-        }
-      };
       window.addEventListener('resize', handleResize);
       window.addEventListener('orientationchange', handleResize);
 
@@ -260,6 +253,11 @@ function GameView({ roomId, playerData, gameState, onEnd }) {
     return () => {
       window.removeEventListener('resize', handleResize);
       window.removeEventListener('orientationchange', handleResize);
+
+      // M-10: Unlock orientation on exit
+      if (screen.orientation && screen.orientation.unlock) {
+        screen.orientation.unlock();
+      }
 
       if (gameRef.current) {
         gameRef.current.destroy(true);
@@ -571,56 +569,101 @@ function GameView({ roomId, playerData, gameState, onEnd }) {
             </div>
         </div>
 
-        {/* M-6: HOW TO PLAY OVERLAY */}
+        {/* M-6: HOW TO PLAY OVERLAY (Premium Aesthetic) */}
         {showTutorial && (
-          <div 
-            onClick={() => { setShowTutorial(false); localStorage.setItem('af_tutorial_seen', 'true'); }}
-            className="absolute inset-0 z-[110] bg-black/80 flex flex-col items-center justify-center cursor-pointer animate-fade-in backdrop-blur-sm"
-          >
-            <div className="bg-neutral-900/90 border-2 border-red-500/50 p-8 rounded-2xl max-w-2xl w-[90%] flex flex-col items-center shadow-[0_0_50px_rgba(255,0,0,0.3)]">
-              <h2 className="font-['Bebas_Neue'] text-4xl md:text-6xl text-white mb-8 tracking-widest">¿CÓMO JUGAR?</h2>
+          <div className="absolute inset-0 z-[110] bg-black/90 flex flex-col items-center justify-center animate-fade-in backdrop-blur-md p-4">
+            <div className="w-full max-w-4xl bg-neutral-950/80 backdrop-blur-2xl border-t-4 border-b-4 border-red-600 p-6 md:p-10 shadow-[0_0_60px_rgba(255,0,0,0.25)] relative overflow-hidden animate-scale-in">
               
-              <div className="grid grid-cols-2 gap-8 w-full">
-                <div className="flex flex-col items-center gap-2">
-                  <div className="text-red-500 font-['Bebas_Neue'] text-xl tracking-wider mb-2">MOVIMIENTO</div>
-                  <div className="flex gap-2 items-center">
-                    <kbd className="px-3 py-2 bg-neutral-800 border-2 border-neutral-600 rounded text-white font-bold">▲</kbd>
-                    <span className="text-neutral-400 font-['Bebas_Neue']">SALTAR</span>
-                  </div>
-                  <div className="flex gap-2 items-center mt-2">
-                    <kbd className="px-3 py-2 bg-neutral-800 border-2 border-neutral-600 rounded text-white font-bold">◄</kbd>
-                    <kbd className="px-3 py-2 bg-neutral-800 border-2 border-neutral-600 rounded text-white font-bold">▼</kbd>
-                    <kbd className="px-3 py-2 bg-neutral-800 border-2 border-neutral-600 rounded text-white font-bold">►</kbd>
-                    <span className="text-neutral-400 font-['Bebas_Neue']">MOVER / BLOQUEO</span>
+              {/* Background Glow */}
+              <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-transparent via-red-500 to-transparent opacity-50"></div>
+              <div className="absolute -top-24 -left-24 w-48 h-48 bg-red-600/10 blur-[100px]"></div>
+              <div className="absolute -bottom-24 -right-24 w-48 h-48 bg-red-600/10 blur-[100px]"></div>
+
+              <h2 className="font-['Bebas_Neue'] text-5xl md:text-8xl text-white mb-2 md:mb-4 tracking-widest text-center drop-shadow-[0_0_15px_rgba(255,255,255,0.3)]">
+                CONTROLES <span className="text-red-500">DE COMBATE</span>
+              </h2>
+              
+              <div className="w-full grid grid-cols-1 md:grid-cols-2 gap-8 md:gap-12 mt-6 md:mt-10">
+                
+                {/* MOVIMIENTO */}
+                <div className="flex flex-col items-center">
+                  <h3 className="text-red-500 font-['Bebas_Neue'] text-2xl md:text-3xl tracking-[0.3em] mb-6 border-b border-red-900/50 pb-2 w-full text-center">MOVIMIENTO</h3>
+                  
+                  {window.innerWidth < 768 ? (
+                    /* MOBILE MOVEMENT */
+                    <div className="flex flex-col items-center gap-4">
+                      <div className="w-24 h-24 rounded-full border-4 border-neutral-700 flex items-center justify-center relative">
+                        <div className="w-8 h-8 bg-red-600 rounded-full animate-ping absolute"></div>
+                        <div className="w-10 h-10 bg-red-600 rounded-full shadow-[0_0_15px_#ff0000] relative z-10"></div>
+                      </div>
+                      <p className="text-neutral-400 font-['Bebas_Neue'] text-xl tracking-widest mt-2 uppercase">USA EL JOYSTICK VIRTUAL</p>
+                    </div>
+                  ) : (
+                    /* PC MOVEMENT */
+                    <div className="flex flex-col gap-4">
+                      <div className="flex justify-center gap-3">
+                        <div className="w-12 h-12 bg-neutral-900 border-2 border-neutral-700 rounded-lg flex items-center justify-center text-white text-2xl shadow-inner">▲</div>
+                      </div>
+                      <div className="flex justify-center gap-3">
+                        <div className="w-12 h-12 bg-neutral-900 border-2 border-neutral-700 rounded-lg flex items-center justify-center text-white text-2xl shadow-inner">◄</div>
+                        <div className="w-12 h-12 bg-neutral-900 border-2 border-neutral-700 rounded-lg flex items-center justify-center text-white text-2xl shadow-inner">▼</div>
+                        <div className="w-12 h-12 bg-neutral-900 border-2 border-neutral-700 rounded-lg flex items-center justify-center text-white text-2xl shadow-inner">►</div>
+                      </div>
+                      <p className="text-neutral-400 font-['Bebas_Neue'] text-xl tracking-widest mt-4 text-center">TECLAS DE DIRECCIÓN</p>
+                    </div>
+                  )}
+                </div>
+
+                {/* ATAQUE */}
+                <div className="flex flex-col items-center">
+                  <h3 className="text-red-500 font-['Bebas_Neue'] text-2xl md:text-3xl tracking-[0.3em] mb-6 border-b border-red-900/50 pb-2 w-full text-center">ATAQUE</h3>
+                  
+                  <div className="grid grid-cols-2 gap-4 md:gap-6">
+                    <div className="flex flex-col items-center gap-2">
+                      <div className="w-12 h-12 md:w-14 md:h-14 bg-green-600/20 border-2 border-green-500 rounded-full flex items-center justify-center text-green-400 font-bold text-xl md:text-2xl shadow-[0_0_15px_rgba(34,197,94,0.3)]">
+                        {window.innerWidth < 768 ? 'JAB' : 'A'}
+                      </div>
+                      <span className="text-xs md:text-sm text-neutral-500 font-bold tracking-widest uppercase">{window.innerWidth < 768 ? 'TECLA A' : 'JAB'}</span>
+                    </div>
+                    <div className="flex flex-col items-center gap-2">
+                      <div className="w-12 h-12 md:w-14 md:h-14 bg-red-600/20 border-2 border-red-500 rounded-full flex items-center justify-center text-red-400 font-bold text-xl md:text-2xl shadow-[0_0_15px_rgba(239,68,68,0.3)]">
+                        {window.innerWidth < 768 ? 'GAN' : 'S'}
+                      </div>
+                      <span className="text-xs md:text-sm text-neutral-500 font-bold tracking-widest uppercase">{window.innerWidth < 768 ? 'TECLA S' : 'GANCHO'}</span>
+                    </div>
+                    <div className="flex flex-col items-center gap-2">
+                      <div className="w-12 h-12 md:w-14 md:h-14 bg-blue-600/20 border-2 border-blue-500 rounded-full flex items-center justify-center text-blue-400 font-bold text-xl md:text-2xl shadow-[0_0_15px_rgba(59,130,246,0.3)]">
+                        {window.innerWidth < 768 ? 'PAT' : 'D'}
+                      </div>
+                      <span className="text-xs md:text-sm text-neutral-500 font-bold tracking-widest uppercase">{window.innerWidth < 768 ? 'TECLA D' : 'PATADA'}</span>
+                    </div>
+                    <div className="flex flex-col items-center gap-2">
+                      <div className="w-12 h-12 md:w-14 md:h-14 bg-purple-600/20 border-2 border-purple-500 rounded-full flex items-center justify-center text-purple-400 font-bold text-xl md:text-2xl shadow-[0_0_15px_rgba(168,85,247,0.3)]">
+                        {window.innerWidth < 768 ? 'ESP' : 'W'}
+                      </div>
+                      <span className="text-xs md:text-sm text-neutral-500 font-bold tracking-widest uppercase">{window.innerWidth < 768 ? 'TECLA W' : 'ESPECIAL'}</span>
+                    </div>
                   </div>
                 </div>
 
-                <div className="flex flex-col items-center gap-2">
-                  <div className="text-red-500 font-['Bebas_Neue'] text-xl tracking-wider mb-2">ATAQUE</div>
-                  <div className="grid grid-cols-2 gap-3">
-                    <div className="flex flex-col items-center">
-                      <kbd className="px-4 py-2 bg-green-600 border-2 border-green-400 rounded-lg text-white font-bold">A</kbd>
-                      <span className="text-xs text-neutral-400 mt-1">JAB</span>
-                    </div>
-                    <div className="flex flex-col items-center">
-                      <kbd className="px-4 py-2 bg-red-600 border-2 border-red-400 rounded-lg text-white font-bold">S</kbd>
-                      <span className="text-xs text-neutral-400 mt-1">GANCHO</span>
-                    </div>
-                    <div className="flex flex-col items-center">
-                      <kbd className="px-4 py-2 bg-blue-600 border-2 border-blue-400 rounded-lg text-white font-bold">D</kbd>
-                      <span className="text-xs text-neutral-400 mt-1">PATADA</span>
-                    </div>
-                    <div className="flex flex-col items-center">
-                      <kbd className="px-4 py-2 bg-purple-600 border-2 border-purple-400 rounded-lg text-white font-bold">W</kbd>
-                      <span className="text-xs text-neutral-400 mt-1">ESPECIAL</span>
-                    </div>
-                  </div>
-                </div>
               </div>
 
-              <div className="mt-10 text-neutral-500 font-['Bebas_Neue'] text-xl animate-pulse tracking-widest">
-                TOCA PARA COMENZAR
+              {/* START BUTTON */}
+              <div className="mt-12 flex flex-col items-center gap-4">
+                <button 
+                  onClick={() => {
+                    setShowTutorial(false);
+                    if (gameRef.current) {
+                        gameRef.current.events.emit('startMatch');
+                    }
+                  }}
+                  className="px-12 py-4 bg-gradient-to-br from-red-700 to-red-900 border border-red-500 text-white text-3xl font-['Bebas_Neue'] tracking-[0.2em] hover:scale-105 active:scale-95 transition-all duration-300 shadow-[0_0_40px_rgba(255,0,0,0.5)] hover:shadow-[0_0_60px_rgba(255,0,0,0.8)]"
+                >
+                  ¡ENTRAR AL RING!
+                </button>
+                <p className="text-neutral-500 font-['Bebas_Neue'] text-sm tracking-[0.3em] animate-pulse">EL COMBATE COMENZARÁ AL CERRAR ESTA VENTANA</p>
               </div>
+
             </div>
           </div>
         )}

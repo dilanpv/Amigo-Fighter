@@ -22,7 +22,7 @@ body {
 /* CONTENEDOR PRINCIPAL */
 .screen {
   width: 100vw;
-  min-height: 100vh; /* V-3: min instead of fixed so content can scroll */
+  min-height: 100dvh; /* V-3: Using dynamic viewport height for mobile */
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -30,7 +30,7 @@ body {
   background: radial-gradient(circle, #1a0a00 0%, #000 100%);
   position: relative;
   padding: 20px;
-  overflow-y: auto; /* V-3: allow vertical scroll */
+  overflow-y: auto;
 }
 
 /* V-15: Legacy CSS classes removed — all styling now handled by Tailwind utility classes in JSX */

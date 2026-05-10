@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import Lobby from './components/Lobby';
-import CharacterSelect from './components/CharacterSelect';
+import CharacterSelect, { CHARACTERS } from './components/CharacterSelect';
 import GameView from './components/GameView';
 import TournamentLobby from './components/TournamentLobby';
 import TournamentHub from './components/TournamentHub';
@@ -169,26 +169,42 @@ function App() {
   };
 
   const startCPUMatch = () => {
-    // H-3: Pass difficulty to Phaser via gameState custom field
-    setGameState({ players: [playerData], cpuDifficulty });
+    // Select a random character for the CPU (excluding current player character optionally, or just any)
+    // To make it fully random, we pick one from CHARACTERS
+    const randomChar = CHARACTERS[Math.floor(Math.random() * CHARACTERS.length)];
+    
+    // H-3: Pass difficulty and random CPU character to Phaser
+    setGameState({ 
+      players: [playerData], 
+      cpuDifficulty,
+      cpuCharacter: randomChar 
+    });
     setScreen('game');
   };
 
   const handleGameEnd = (winnerId) => {
     // N-16: Track session stats
-    setSessionStats(prev => ({
-      fights: prev.fights + 1,
-      wins: winnerId && winnerId === playerData?.id ? prev.wins + 1 : prev.wins,
-      kos: winnerId ? prev.kos + 1 : prev.kos,
-    }));
+    if (playerData) {
+      setSessionStats(prev => ({
+        fights: prev.fights + 1,
+        wins: winnerId && winnerId === playerData.id ? prev.wins + 1 : prev.wins,
+        kos: winnerId ? prev.kos + 1 : prev.kos,
+      }));
+    }
 
-    if (roomId.startsWith('T-')) {
+    // M-10: Ensure we exit fullscreen and reset scroll on exit (critical for mobile)
+    if (document.fullscreenElement) {
+        document.exitFullscreen().catch(() => {});
+    }
+    window.scrollTo(0, 0);
+
+    if (roomId && typeof roomId === 'string' && roomId.startsWith('T-')) {
         // Tournament match — report win if there's a winner, then return to bracket
         if (winnerId) socket.emit('report_win', { roomId, winnerId });
         setScreen('bracket');
     } else {
         // Normal match — leave the room and go back to lobby
-        socket.emit('leave_match', { roomId });
+        if (roomId) socket.emit('leave_match', { roomId });
         setScreen('lobby');
     }
   };

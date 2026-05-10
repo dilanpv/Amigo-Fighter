@@ -313,7 +313,7 @@ export default class SoundManager {
         if (this.masterGain && this.ctx) {
             this.masterGain.gain.setTargetAtTime(0.001, this.ctx.currentTime, 0.3);
             setTimeout(() => {
-                if (this.masterGain && !this._bgmLoopId) {
+                if (this.masterGain && this.ctx && !this._bgmLoopId) {
                     this.masterGain.gain.setValueAtTime(this.muted ? 0 : this.volume, this.ctx.currentTime);
                 }
             }, 1200);

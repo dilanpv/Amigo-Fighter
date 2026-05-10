@@ -29,11 +29,11 @@ const getCroppedImg = (imageSrc, pixelCrop) => {
   });
 };
 
-const CHARACTERS = [
+export const CHARACTERS = [
   { 
     id: 'ninja', 
     name: 'EL NINJA', 
-    img: '/assets/EL NINJA.png',
+    img: '/assets/EL_NINJA.png',
     portrait: '/assets/El_Ninja_seleccion.png',
     cols: 11, rows: 4, 
     fWidth: 128, fHeight: 192,
@@ -43,7 +43,7 @@ const CHARACTERS = [
   { 
     id: 'campeon', 
     name: 'EL CAMPEÓN', 
-    img: '/assets/EL CAMPEÓN.png', 
+    img: '/assets/EL_CAMPEON.png', 
     portrait: '/assets/El_Campeón_seleccion.png',
     cols: 11, rows: 4, 
     fWidth: 128, fHeight: 192,
@@ -53,7 +53,7 @@ const CHARACTERS = [
   { 
     id: 'agresivo', 
     name: 'EL AGRESIVO', 
-    img: '/assets/EL AGRESIVO.png', 
+    img: '/assets/EL_AGRESIVO.png', 
     portrait: '/assets/El_Agresivo_seleccion.png',
     cols: 11, rows: 4, 
     fWidth: 128, fHeight: 192,
@@ -62,8 +62,8 @@ const CHARACTERS = [
   },
   { 
     id: 'luchador', 
-    name: 'LUCHADOR', 
-    img: '/assets/LUCHADOR.png', 
+    name: 'EL CLÁSICO', 
+    img: '/assets/EL_CLASICO.png', 
     portrait: '/assets/Luchador_seleccion.png',
     cols: 11, rows: 4, 
     fWidth: 128, fHeight: 192,
