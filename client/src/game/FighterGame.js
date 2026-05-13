@@ -216,32 +216,53 @@ export default class FighterGame extends Phaser.Scene {
     }
 
     setupAnimations() {
-        const createAnimFor = (playerId) => {
+        const CHARACTER_FRAMES = {
+            'DEFAULT': [
+                { key: 'idle',     start: 0,  end: 3,  rate: 8,  repeat: -1 },
+                { key: 'walk_fwd', start: 4,  end: 9,  rate: 10, repeat: -1 },
+                { key: 'jump',     start: 10, end: 12, rate: 8,  repeat: 0  },
+                { key: 'jab',      start: 13, end: 16, rate: 15, repeat: 0  },
+                { key: 'hook',     start: 17, end: 20, rate: 12, repeat: 0  },
+                { key: 'kick',     start: 21, end: 24, rate: 12, repeat: 0  },
+                { key: 'hit',      start: 25, end: 27, rate: 10, repeat: 0  },
+                { key: 'special',  start: 28, end: 31, rate: 9,  repeat: 0  },
+                { key: 'block',    start: 32, end: 33, rate: 6,  repeat: 0  },
+                { key: 'ko',       start: 34, end: 37, rate: 6,  repeat: 0  },
+            ],
+            // Ninja: frame 37 was AI-generated incorrectly (standing instead of lying down)
+            'ninja': [
+                { key: 'idle',     start: 0,  end: 3,  rate: 8,  repeat: -1 },
+                { key: 'walk_fwd', start: 4,  end: 9,  rate: 10, repeat: -1 },
+                { key: 'jump',     start: 10, end: 12, rate: 8,  repeat: 0  },
+                { key: 'jab',      start: 13, end: 16, rate: 15, repeat: 0  },
+                { key: 'hook',     start: 17, end: 20, rate: 12, repeat: 0  },
+                { key: 'kick',     start: 21, end: 24, rate: 12, repeat: 0  },
+                { key: 'hit',      start: 25, end: 27, rate: 10, repeat: 0  },
+                { key: 'special',  start: 28, end: 31, rate: 9,  repeat: 0  },
+                { key: 'block',    start: 32, end: 33, rate: 6,  repeat: 0  },
+                { key: 'ko',       start: 34, end: 36, rate: 6,  repeat: 0  },
+            ]
+        };
+
+        const createAnimFor = (playerId, characterId) => {
             const textureKey = `fighter_${playerId}`;
             if (!this.textures.exists(textureKey)) return;
             const totalFrames = this.textures.get(textureKey).frameTotal;
             const maxIdx = Math.max(0, totalFrames - 2); 
             const safeF = (idx) => Math.min(idx, maxIdx);
 
-            const anims = [
-                { key: 'idle', start: 0, end: safeF(3), rate: 8, repeat: -1 },
-                { key: 'walk_fwd', start: safeF(4), end: safeF(10), rate: 10, repeat: -1 },
-                { key: 'jump', start: safeF(11), end: safeF(13), rate: 8, repeat: 0 },
-                { key: 'jab', start: safeF(14), end: safeF(17), rate: 15, repeat: 0 },
-                { key: 'hook', start: safeF(18), end: safeF(21), rate: 12, repeat: 0 },
-                { key: 'kick', start: safeF(22), end: safeF(25), rate: 12, repeat: 0 },
-                { key: 'hit', start: safeF(26), end: safeF(30), rate: 10, repeat: 0 },
-                { key: 'special', start: safeF(31), end: safeF(33), rate: 9, repeat: 0 },
-                { key: 'block', start: safeF(33), end: safeF(34), rate: 6, repeat: 0 },
-                { key: 'ko', start: safeF(34), end: safeF(37), rate: 6, repeat: 0 },
-            ];
+            // Look up character-specific frame mapping
+            const anims = CHARACTER_FRAMES[characterId] || CHARACTER_FRAMES['DEFAULT'];
             
             anims.forEach(a => {
                 const fullKey = `${a.key}_${playerId}`;
                 if (!this.anims.exists(fullKey)) {
                     this.anims.create({
                         key: fullKey,
-                        frames: this.anims.generateFrameNumbers(textureKey, { start: a.start, end: Math.max(a.start, a.end) }),
+                        frames: this.anims.generateFrameNumbers(textureKey, { 
+                            start: safeF(a.start), 
+                            end: Math.max(safeF(a.start), safeF(a.end)) 
+                        }),
                         frameRate: a.rate,
                         repeat: a.repeat
                     });
@@ -249,8 +270,13 @@ export default class FighterGame extends Phaser.Scene {
             });
         };
 
-        this.gameState.players.forEach(p => createAnimFor(p.id));
-        createAnimFor('CPU');
+        this.gameState.players.forEach(p => {
+            const charId = p.character?.id || 'luchador';
+            createAnimFor(p.id, charId);
+        });
+        // CPU uses its assigned character
+        const cpuCharId = this.gameState.cpuCharacter?.id || 'agresivo';
+        createAnimFor('CPU', cpuCharId);
     }
 
     spawnPlayers() {
@@ -259,7 +285,7 @@ export default class FighterGame extends Phaser.Scene {
         const getHeadOffset = (spec) => {
             const topPct = spec?.headPos ? parseFloat(spec.headPos.top) / 100 : 0.20;
             const h = spec?.fHeight || 192;
-            return (-h / 2) + (h * topPct);
+            return (-h / 2) + (h * topPct) - 45; // Move face 45px higher
         };
         
         // Spawn Local Player
@@ -282,26 +308,14 @@ export default class FighterGame extends Phaser.Scene {
         localFighter.sprite.setFlipX(side === 'right');
         localFighter.sprite.setDepth(10); // Ensure characters are above background
 
-        // V-17: Máscara negra para la cara (re-aplicado)
-        localFighter.faceMask = this.add.graphics();
-        localFighter.faceMask.fillStyle(0x000000, 0.95);
-        localFighter.faceMask.fillCircle(0, 0, 20);
-        localFighter.faceMask.setDepth(11);
-        
+        // Avatar del jugador: se muestra SOBRE la cabeza del sprite
         if (this.textures.exists(`face_${p.id}`)) {
             const faceYOffset = getHeadOffset(localFighter.spec);
             
-            // Avatar encima de la cabeza, tamaño reducido
-            localFighter.face = this.add.image(x, 314 + faceYOffset - 100, `face_${p.id}`);
-            localFighter.face.setDisplaySize(45, 45); 
-            const maskShape = this.add.graphics().fillCircle(0, 0, 22.5).setVisible(false);
-            
-            // Phaser 4 WebGL Masking
-            if (localFighter.face.enableFilters) {
-                localFighter.face.enableFilters().filters.external.addMask(maskShape);
-            }
-            
-            localFighter.maskShape = maskShape;
+            // Avatar circular sobre la cabeza, tamaño visible
+            localFighter.face = this.add.image(x, 314 + faceYOffset, `face_${p.id}`);
+            localFighter.face.setDisplaySize(52, 52);
+            localFighter.face.setDepth(12);
         }
         this.players[p.id] = localFighter;
 
@@ -325,20 +339,13 @@ export default class FighterGame extends Phaser.Scene {
             oppFighter.sprite.setFlipX(oppSide === 'right');
             oppFighter.sprite.setDepth(10);
             
+            // Avatar del oponente: sobre la cabeza
             if (this.textures.exists(`face_${oppData.id}`)) {
                 const faceYOffset = getHeadOffset(oppFighter.spec);
                 
-                // Avatar encima de la cabeza
-                oppFighter.face = this.add.image(oppX, 314 + faceYOffset - 100, `face_${oppData.id}`);
-                oppFighter.face.setDisplaySize(45, 45);
-                const maskShape = this.add.graphics().fillCircle(0, 0, 22.5).setVisible(false);
-                
-                // Phaser 4 WebGL Masking
-                if (oppFighter.face.enableFilters) {
-                    oppFighter.face.enableFilters().filters.external.addMask(maskShape);
-                }
-                
-                oppFighter.maskShape = maskShape;
+                oppFighter.face = this.add.image(oppX, 314 + faceYOffset, `face_${oppData.id}`);
+                oppFighter.face.setDisplaySize(52, 52);
+                oppFighter.face.setDepth(12);
             }
             this.players[oppData.id] = oppFighter;
         } else {
@@ -363,15 +370,8 @@ export default class FighterGame extends Phaser.Scene {
             cpu.sprite.setDepth(10);
             cpu.sprite.setTint(0xffaaaa); // Ligero tinte agresivo
             
-            // El avatar de CPU se ha eliminado por petición del usuario
+            // CPU no tiene avatar
             cpu.face = null;
-
-            // V-17: Máscara negra para la cara (re-aplicado)
-            const cpuHeadOffset = getHeadOffset(cpu.spec);
-            cpu.faceMask = this.add.graphics();
-            cpu.faceMask.fillStyle(0x000000, 0.95);
-            cpu.faceMask.fillCircle(0, 0, 20);
-            cpu.faceMask.setDepth(11);
             
             this.players['CPU'] = cpu;
         }
@@ -408,10 +408,11 @@ export default class FighterGame extends Phaser.Scene {
         // Store references so we can remove them in shutdown()
         this._onOpponentMove = (data) => {
             const opp = this.players[data.id];
-            if (opp && opp.state !== 'attacking') {
+            if (opp && opp.state !== 'attacking' && opp.state !== 'falling' && opp.state !== 'ko') {
                 if (opp.moveTween) opp.moveTween.stop();
                 opp.targetX = data.x;
                 opp.targetY = data.y;
+                opp.lastNetUpdate = this.time.now; // Track when we received the update
                 opp.sprite.play(`${data.anim}_${opp.id}`, true);
                 opp.sprite.setFlipX(data.flip);
             }
@@ -538,9 +539,15 @@ export default class FighterGame extends Phaser.Scene {
     }
 
     update() {
-        if (!this.matchStarted || this.gameOver) return;
+        if (!this.matchStarted) return;
+        
+        if (this.gameOver) {
+            this.syncGraphics(); // Ensure avatars follow the falling bodies
+            return;
+        }
+
         const local = this.players[this.playerData.id];
-        if (!local || local.state === 'hit' || local.state === 'ko') return;
+        if (!local || local.state === 'hit' || local.state === 'falling' || local.state === 'ko') return;
 
         this.handleLocalInput(local);
         
@@ -556,27 +563,53 @@ export default class FighterGame extends Phaser.Scene {
             this.checkCombatCollision(this.players['CPU']);
         }
 
-        // M-2: Lag compensation (Client-side interpolation)
+        // M-2: Lag compensation — Adaptive interpolation for smooth opponent movement
         Object.values(this.players).forEach(p => {
             if (!p.isLocal && !p.isCPU && p.targetX !== undefined && p.state !== 'attacking' && p.state !== 'hit' && p.state !== 'ko') {
-                p.sprite.x = Phaser.Math.Linear(p.sprite.x, p.targetX, 0.75); // Aumentado de 0.4 a 0.75 para mayor respuesta
-                p.sprite.y = Phaser.Math.Linear(p.sprite.y, p.targetY, 0.75);
+                const dx = Math.abs(p.sprite.x - p.targetX);
+                const dy = Math.abs(p.sprite.y - p.targetY);
                 
-                // Snap if very close
-                if (Math.abs(p.sprite.x - p.targetX) < 1) p.sprite.x = p.targetX;
-                if (Math.abs(p.sprite.y - p.targetY) < 1) p.sprite.y = p.targetY;
+                // Adaptive lerp: faster when far away to prevent rubber-banding, smoother when close
+                const lerpX = dx > 50 ? 0.95 : dx > 15 ? 0.85 : 0.7;
+                const lerpY = dy > 50 ? 0.95 : dy > 15 ? 0.85 : 0.7;
+                
+                p.sprite.x = Phaser.Math.Linear(p.sprite.x, p.targetX, lerpX);
+                p.sprite.y = Phaser.Math.Linear(p.sprite.y, p.targetY, lerpY);
+                
+                // Snap if very close (prevent micro-jitter)
+                if (dx < 0.5) p.sprite.x = p.targetX;
+                if (dy < 0.5) p.sprite.y = p.targetY;
             }
         });
     }
 
     handleCPU(cpu, player) {
-        // H-3: CPU Difficulty configs
+        // H-3: CPU Difficulty configs — ALL MODES VERY HARD
         const CPU_CONFIGS = {
-            facil:   { reactionMin: 30, reactionMax: 50, blockChance: 0.40, comboChance: 0.20, jumpChance: 0.10 },
-            normal:  { reactionMin: 10, reactionMax: 20, blockChance: 0.70, comboChance: 0.50, jumpChance: 0.15 },
-            dificil: { reactionMin:  1, reactionMax:  5, blockChance: 0.95, comboChance: 0.90, jumpChance: 0.30 },
+            facil:   { reactionMin: 8,  reactionMax: 18, blockChance: 0.55, comboChance: 0.40, jumpChance: 0.15, dodgeChance: 0.20, counterChance: 0.15 },
+            normal:  { reactionMin: 3,  reactionMax: 8,  blockChance: 0.75, comboChance: 0.65, jumpChance: 0.20, dodgeChance: 0.35, counterChance: 0.30 },
+            dificil: { reactionMin: 1,  reactionMax: 3,  blockChance: 0.92, comboChance: 0.90, jumpChance: 0.30, dodgeChance: 0.50, counterChance: 0.45 },
         };
-        const diff = CPU_CONFIGS[this.cpuDifficulty] || CPU_CONFIGS.dificil; // Make default harder just in case
+        const diff = { ...(CPU_CONFIGS[this.cpuDifficulty] || CPU_CONFIGS.dificil) };
+
+        // --- ADAPTIVE AI: Adjust CPU behavior based on PLAYER's fighting style ---
+        const playerStyle = player.spec?.style || 'Balanceado';
+        if (playerStyle === 'Agresivo') {
+            // Player hits hard but takes more damage — CPU should be very defensive and punish openings
+            diff.blockChance = Math.min(0.98, diff.blockChance + 0.20);
+            diff.dodgeChance = Math.min(0.70, diff.dodgeChance + 0.25);
+            diff.counterChance = Math.min(0.65, diff.counterChance + 0.25);
+            diff.reactionMin = Math.max(1, diff.reactionMin - 1);
+            diff.reactionMax = Math.max(2, diff.reactionMax - 2);
+        } else if (playerStyle === 'Defensivo') {
+            // Player blocks well — CPU should use more specials and combo pressure to break through
+            diff.comboChance = Math.min(0.95, diff.comboChance + 0.20);
+        } else if (playerStyle === 'Velocista') {
+            // Player is fast — CPU must react faster and block preemptively
+            diff.reactionMin = Math.max(1, diff.reactionMin - 2);
+            diff.reactionMax = Math.max(2, diff.reactionMax - 3);
+            diff.blockChance = Math.min(0.95, diff.blockChance + 0.10);
+        }
 
         if (cpu.state === 'ko' || cpu.state === 'hit' || cpu.state === 'attacking') return;
 
@@ -584,18 +617,24 @@ export default class FighterGame extends Phaser.Scene {
         const onGround = cpu.sprite.body.blocked.down;
 
         // Reactive block when player attacks nearby
-        if (player.state === 'attacking' && dist < 120 && onGround) {
+        if (player.state === 'attacking' && dist < 140 && onGround) {
             if (Math.random() < diff.blockChance && cpu.state !== 'blocking') {
                 cpu.sprite.setVelocityX(0);
                 cpu.state = 'blocking';
                 cpu.sprite.play(`block_${cpu.id}`, true);
-                cpu.cpuTimer = 25;
+                cpu.cpuTimer = 20;
                 return;
             }
         }
 
-        if (cpu.state === 'blocking' && player.state !== 'attacking' && cpu.cpuTimer <= 10) {
+        if (cpu.state === 'blocking' && player.state !== 'attacking' && cpu.cpuTimer <= 8) {
             cpu.state = 'idle';
+            // Immediate counter after dropping block
+            if (Math.random() < diff.counterChance && dist < 100) {
+                this.executeAttack(cpu, 'hook');
+                cpu.cpuTimer = 5;
+                return;
+            }
         }
 
         cpu.cpuTimer--;
@@ -605,23 +644,50 @@ export default class FighterGame extends Phaser.Scene {
 
         if (dist > 100) {
             const dir = player.sprite.x > cpu.sprite.x ? 1 : -1;
-            cpu.sprite.setVelocityX(dir * 180);
+            const cpuSpeedMult = cpu.spec.style === 'Velocista' ? 1.4 : cpu.spec.style === 'Agresivo' ? 1.15 : 1.0;
+            cpu.sprite.setVelocityX(dir * 220 * cpuSpeedMult);
             cpu.sprite.play(`walk_fwd_${cpu.id}`, true);
             cpu.sprite.setFlipX(dir === -1);
+
+            // Close distance aggressively — jump-in attack if far
+            if (dist > 200 && onGround && Math.random() < 0.25) {
+                cpu.sprite.setVelocityY(-500);
+                cpu.sprite.play(`jump_${cpu.id}`, true);
+            }
         } else {
             cpu.sprite.setVelocityX(0);
             const r = Math.random();
-            // Dificil: can chain a quick double attack
+
+            // Dodge backward when player is attacking
+            if (player.state === 'attacking' && r < diff.dodgeChance && cpu.state !== 'blocking') {
+                const escapeDir = cpu.sprite.x > player.sprite.x ? 1 : -1;
+                cpu.sprite.setVelocityX(escapeDir * 350);
+                cpu.cpuTimer = 6;
+                return;
+            }
+
+            // Counter-attack: punish player recovery frames
+            if (player.state === 'idle' && player.lastAnim && player.lastAnim !== 'idle' && r < diff.counterChance) {
+                const counterType = Math.random() < 0.5 ? 'hook' : 'special';
+                this.executeAttack(cpu, counterType);
+                cpu.cpuTimer = 4;
+                return;
+            }
+
+            // Chain combo attacks
             if (diff.comboChance > 0 && r < diff.comboChance) {
                 this.executeAttack(cpu, 'jab');
-                this.time.delayedCall(350, () => {
-                    if (!this.gameOver && cpu.state !== 'ko') this.executeAttack(cpu, 'hook');
+                this.time.delayedCall(250, () => {
+                    if (!this.gameOver && cpu.state !== 'ko' && cpu.state !== 'hit') this.executeAttack(cpu, 'hook');
                 });
-            } else if (r < 0.30) { this.executeAttack(cpu, 'jab'); }
-            else if (r < 0.55)   { this.executeAttack(cpu, 'hook'); }
-            else if (r < 0.72)   { this.executeAttack(cpu, 'kick'); }
-            else if (r < 0.85)   { this.executeAttack(cpu, 'special'); }
-            else if (onGround && r < 0.85 + diff.jumpChance) {
+                this.time.delayedCall(500, () => {
+                    if (!this.gameOver && cpu.state !== 'ko' && cpu.state !== 'hit') this.executeAttack(cpu, 'kick');
+                });
+            } else if (r < 0.28) { this.executeAttack(cpu, 'jab'); }
+            else if (r < 0.50)   { this.executeAttack(cpu, 'hook'); }
+            else if (r < 0.68)   { this.executeAttack(cpu, 'kick'); }
+            else if (r < 0.82)   { this.executeAttack(cpu, 'special'); }
+            else if (onGround && r < 0.82 + diff.jumpChance) {
                 cpu.sprite.setVelocityY(-500);
                 cpu.sprite.play(`jump_${cpu.id}`, true);
             } else {
@@ -643,6 +709,10 @@ export default class FighterGame extends Phaser.Scene {
         else if (Phaser.Input.Keyboard.JustDown(this.attackKeys.D)) this.executeAttack(local, 'kick');
         else if (Phaser.Input.Keyboard.JustDown(this.attackKeys.W)) this.executeAttack(local, 'special');
 
+        // Style-based speed multiplier
+        const styleSpeedMult = local.spec.style === 'Velocista' ? 1.5 : local.spec.style === 'Agresivo' ? 1.1 : local.spec.style === 'Defensivo' ? 0.85 : 1.0;
+        const baseSpeed = 160 + (this.stats.spd * 20);
+
         // Blocking
         if (this.cursors.down.isDown && onGround) {
             local.sprite.setVelocityX(0);
@@ -652,12 +722,12 @@ export default class FighterGame extends Phaser.Scene {
         }
         // Movement
         else if (this.cursors.left.isDown) {
-            local.sprite.setVelocityX(-(160 + this.stats.spd * 20));
+            local.sprite.setVelocityX(-(baseSpeed * styleSpeedMult));
             local.sprite.setFlipX(true);
             anim = onGround ? 'walk_fwd' : 'jump';
             moved = true;
         } else if (this.cursors.right.isDown) {
-            local.sprite.setVelocityX(160 + this.stats.spd * 20);
+            local.sprite.setVelocityX(baseSpeed * styleSpeedMult);
             local.sprite.setFlipX(false);
             anim = onGround ? 'walk_fwd' : 'jump';
             moved = true;
@@ -684,23 +754,18 @@ export default class FighterGame extends Phaser.Scene {
         if (moved || anim !== local.lastAnim) {
             local.sprite.play(`${anim}_${local.id}`, true);
             
-            // Throttle socket emits to ~22 updates per second (45ms) to prevent network flooding on slow connections
+            // Throttle socket emits to ~60 updates per second (16ms)
             const now = this.time.now;
-            if (!local.lastEmitTime || now - local.lastEmitTime >= 45 || anim !== local.lastAnim) {
-                // Usar volatile para enviar datos sin buffering (mejor latencia en juegos de pelea)
-                if (this.socket.volatile) {
-                    this.socket.volatile.emit('player_move', {
-                        roomId: this.roomId, id: this.playerData.id,
-                        x: local.sprite.x, y: local.sprite.y,
-                        anim: anim, flip: local.sprite.flipX
-                    });
-                } else {
-                    this.socket.emit('player_move', {
-                        roomId: this.roomId, id: this.playerData.id,
-                        x: local.sprite.x, y: local.sprite.y,
-                        anim: anim, flip: local.sprite.flipX
-                    });
-                }
+            const animChanged = anim !== local.lastAnim;
+            if (!local.lastEmitTime || now - local.lastEmitTime >= 16 || animChanged) {
+                // Compact payload: round coordinates to integers (saves JSON bytes, positions are pixel-based)
+                const payload = {
+                    roomId: this.roomId, id: this.playerData.id,
+                    x: Math.round(local.sprite.x),
+                    y: Math.round(local.sprite.y),
+                    anim, flip: local.sprite.flipX
+                };
+                this.socket.emit('player_move', payload);
                 local.lastEmitTime = now;
             }
             local.lastAnim = anim;
@@ -738,10 +803,10 @@ export default class FighterGame extends Phaser.Scene {
 
         // H-2: Per-attack hitbox configuration (Ajustado para mayor precisión/menor alcance)
         const ATTACK_HITBOXES = {
-            jab:     { xOffset: 45, yOffset:  -5, halfW: 25, halfH: 35, activeFrom: 2 },
-            hook:    { xOffset: 55, yOffset:  -5, halfW: 30, halfH: 45, activeFrom: 3 },
-            kick:    { xOffset: 65, yOffset:  20, halfW: 35, halfH: 55, activeFrom: 3 },
-            special: { xOffset: 50, yOffset: -20, halfW: 40, halfH: 65, activeFrom: 2 },
+            jab:     { xOffset: 50, yOffset:  -5, halfW: 25, halfH: 35, activeFrom: 2 },
+            hook:    { xOffset: 60, yOffset:  -5, halfW: 35, halfH: 45, activeFrom: 3 },
+            kick:    { xOffset: 75, yOffset:  20, halfW: 40, halfH: 55, activeFrom: 3 },
+            special: { xOffset: 60, yOffset: -20, halfW: 45, halfH: 65, activeFrom: 2 },
         };
         const attackType = Object.keys(ATTACK_HITBOXES).find(k => currentAnim.key.includes(k)) || 'jab';
         const hb = ATTACK_HITBOXES[attackType];
@@ -771,31 +836,40 @@ export default class FighterGame extends Phaser.Scene {
                 attacker.hasHit = true;
                 attacker.comboCount = (attacker.comboCount || 0) + 1;
 
-                // --- Attacker damage calculation ---
-                const BASE_DAMAGE = { jab: 8, hook: 12, kick: 10, special: 20 };
-                let baseDamage = BASE_DAMAGE[attackType] ?? 8;
+                // --- Attacker damage calculation (REDUCED for longer fights) ---
+                const BASE_DAMAGE = { jab: 3, hook: 5, kick: 4, special: 9 };
+                let baseDamage = BASE_DAMAGE[attackType] ?? 3;
 
-                if (attacker.spec.style === 'Agresivo') baseDamage *= 1.2;
-                else if (attacker.spec.style === 'Defensivo') baseDamage *= 0.8;
+                // --- Fighting style SIGNIFICANT impact ---
+                if (attacker.spec.style === 'Agresivo') baseDamage *= 1.5;      // +50% damage
+                else if (attacker.spec.style === 'Defensivo') baseDamage *= 0.7; // -30% damage, but better defense below
+                else if (attacker.spec.style === 'Velocista') baseDamage *= 0.9; // Slight dmg penalty, compensated by speed
 
-                let rawDamage = baseDamage + ((attacker.spec.stats?.str || this.stats.str) * 1.5);
+                let rawDamage = baseDamage + ((attacker.spec.stats?.str || this.stats.str) * 0.8);
 
-                // --- Combo multiplier ---
+                // --- Combo multiplier (3-hit combo = critical) ---
                 let isCombo = false;
                 if (attacker.comboCount >= 3) {
-                    rawDamage *= 1.2; // Reducido el daño de golpes triples
+                    rawDamage *= 1.6; // Combos are devastating but hard to land
                     isCombo = true;
                     attacker.comboCount = 0;
                 }
 
-                // --- Defender damage reductions (pre-calculated here so BOTH clients use same value) ---
-                // C-1 fix: finalDamage is computed once by the attacker and sent to defender
-                let finalDamage = rawDamage - (defender.spec.stats?.res || 0);
-                if (defender.spec.style === 'Defensivo') finalDamage *= 0.8;
-                if (defender.spec.style === 'Agresivo')  finalDamage *= 1.1;
+                // --- Defender damage reductions --- 
+                let finalDamage = rawDamage - (defender.spec.stats?.res || 0) * 0.5;
+                
+                // Style-based defense
+                if (defender.spec.style === 'Defensivo') finalDamage *= 0.55;  // -45% damage taken!
+                if (defender.spec.style === 'Agresivo')  finalDamage *= 1.25;  // +25% damage taken (glass cannon)
+                if (defender.spec.style === 'Velocista') finalDamage *= 0.85;  // Slight dodge mitigation
                 
                 if (defender.state === 'blocking') {
-                    finalDamage = 0;
+                    // Defensivo blocks ALL, others still take chip damage
+                    if (defender.spec.style === 'Defensivo') {
+                        finalDamage = 0;
+                    } else {
+                        finalDamage = Math.max(1, Math.round(finalDamage * 0.15)); // 15% chip damage through block
+                    }
                 } else {
                     finalDamage = Math.max(1, Math.round(finalDamage));
                 }
@@ -827,12 +901,19 @@ export default class FighterGame extends Phaser.Scene {
             finalDamage = damage;
         } else {
             // Fallback: compute reductions locally (only used by CPU matches where no socket is involved)
-            finalDamage = damage - (target.spec.stats?.res || 0);
-            if (target.spec.style === 'Defensivo') finalDamage *= 0.8;
-            if (target.spec.style === 'Agresivo')  finalDamage *= 1.1;
+            finalDamage = damage - (target.spec.stats?.res || 0) * 0.5;
+            
+            // Style-based defense
+            if (target.spec.style === 'Defensivo') finalDamage *= 0.55;
+            if (target.spec.style === 'Agresivo')  finalDamage *= 1.25;
+            if (target.spec.style === 'Velocista') finalDamage *= 0.85;
             
             if (target.state === 'blocking') {
-                finalDamage = 0;
+                if (target.spec.style === 'Defensivo') {
+                    finalDamage = 0;
+                } else {
+                    finalDamage = Math.max(1, Math.round(finalDamage * 0.15));
+                }
             } else {
                 finalDamage = Math.max(1, Math.round(finalDamage));
             }
@@ -899,7 +980,7 @@ export default class FighterGame extends Phaser.Scene {
         target.sprite.setVelocityX(dir * (isCombo ? 400 : 200 + finalDamage * 5));
         this.time.delayedCall(200, () => {
             target.sprite.clearTint();
-            if (target.state !== 'ko') target.state = 'idle';
+            if (target.state !== 'ko' && target.state !== 'falling') target.state = 'idle';
         });
         this.game.events.emit('updateHP', { id: targetId, damage: finalDamage });
     }
@@ -925,70 +1006,29 @@ export default class FighterGame extends Phaser.Scene {
     syncGraphics() {
         Object.values(this.players).forEach(p => {
             if (p.face) {
-                // Add tiny offset based on animation to hide the original face underneath
                 let animOffsetY = 0;
                 let animOffsetX = 0;
                 const anim = p.sprite.anims.currentAnim?.key || '';
                 
-                // Adjust per-animation offsets
-                if (anim.includes('hit')) { animOffsetY = 15; animOffsetX = -15; }
-                if (anim.includes('block')) { animOffsetY = 10; animOffsetX = -5; }
-                if (anim.includes('ko')) animOffsetY = 35;
-                if (anim.includes('jump')) animOffsetY = -8;
-                if (anim.includes('jab') || anim.includes('hook') || anim.includes('kick')) { animOffsetX = 10; }
+                // Pequeños ajustes según la animación para que el avatar siga la cabeza
+                if (anim.includes('hit'))   { animOffsetY = 12; animOffsetX = -10; }
+                if (anim.includes('block')) { animOffsetY = 8;  animOffsetX = -4; }
+                if (anim.includes('ko') || anim.includes('falling')) { animOffsetY = 40; }
+                if (anim.includes('jump'))  { animOffsetY = -10; }
+                if (anim.includes('jab') || anim.includes('hook') || anim.includes('kick')) {
+                    animOffsetX = 8;
+                }
 
                 const topPct = p.spec?.headPos ? parseFloat(p.spec.headPos.top) / 100 : 0.20;
                 const h = p.spec?.fHeight || 192;
-                const baseFaceYOffset = (-h / 2) + (h * topPct);
+                const baseFaceYOffset = (-h / 2) + (h * topPct) - 45; // Move face 45px higher
                 
                 const dir = p.sprite.flipX ? -1 : 1;
                 
-                // Actualizar avatar (encima de la cabeza)
+                // Posicionar el avatar sobre la cabeza del sprite
                 p.face.x = p.sprite.x + (animOffsetX * dir);
-                p.face.y = p.sprite.y + baseFaceYOffset + animOffsetY - 100;
+                p.face.y = p.sprite.y + baseFaceYOffset + animOffsetY;
                 p.face.setFlipX(p.sprite.flipX);
-                
-                if (p.maskShape) {
-                    p.maskShape.x = p.face.x;
-                    p.maskShape.y = p.face.y;
-                }
-            }
-
-            // V-17: Sincronizar máscara negra
-            if (p.faceMask) {
-                let animOffsetY = 0;
-                let animOffsetX = 0;
-                const anim = p.sprite.anims.currentAnim?.key || '';
-                
-                // Ajustes de posición de la máscara según la pose
-                if (anim.includes('hit')) { animOffsetY = 15; animOffsetX = -10; }
-                if (anim.includes('block')) { animOffsetY = 10; animOffsetX = -5; }
-                if (anim.includes('ko') || anim.includes('falling')) {
-                    animOffsetY = 45; 
-                    animOffsetX = -10;
-                }
-                if (anim.includes('jump')) animOffsetY = -12;
-                if (anim.includes('jab') || anim.includes('hook') || anim.includes('kick')) { 
-                    animOffsetX = 12; 
-                }
-
-                const topPct = p.spec?.headPos ? parseFloat(p.spec.headPos.top) / 100 : 0.20;
-                const leftPct = p.spec?.headPos ? parseFloat(p.spec.headPos.left) / 100 : 0.48;
-                const h = p.spec?.fHeight || 192;
-                const w = p.spec?.fWidth || 128;
-                
-                const baseFaceYOffset = (-h / 2) + (h * topPct);
-                const baseFaceXOffset = (-w / 2) + (w * leftPct);
-                
-                const dir = p.sprite.flipX ? -1 : 1;
-
-                p.faceMask.x = p.sprite.x + (baseFaceXOffset * dir) + (animOffsetX * dir);
-                p.faceMask.y = p.sprite.y + baseFaceYOffset + animOffsetY;
-                
-                // Si está cayendo, la máscara debe seguir el cuerpo al suelo
-                if (p.state === 'falling' || p.state === 'ko') {
-                    p.faceMask.y += 20;
-                }
             }
         });
     }

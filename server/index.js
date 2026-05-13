@@ -15,7 +15,19 @@ const io = new Server(server, {
         origin: process.env.CLIENT_URL || "*",
         methods: ["GET", "POST"]
     },
-    maxHttpBufferSize: 1e7 // 10MB
+    maxHttpBufferSize: 1e7, // 10MB
+    // === Low-latency optimizations for real-time fighting game ===
+    transports: ['websocket'],       // WebSocket only — skip long-polling overhead
+    allowUpgrades: false,            // No transport upgrade dance
+    pingInterval: 10000,             // 10s heartbeat interval
+    pingTimeout: 5000,               // 5s timeout before disconnect
+    perMessageDeflate: false,        // Disable compression for speed (fight data is small)
+    httpCompression: false,          // No HTTP compression on WS
+    connectTimeout: 8000,            // 8s connection timeout
+    connectionStateRecovery: {
+        maxDisconnectionDuration: 5000, // 5s grace period for mobile reconnects
+        skipMiddlewares: true
+    }
 });
 
 const rooms = new Map();
@@ -91,10 +103,16 @@ function processTournamentWin(roomId, winnerId) {
                 foundTournament.round++;
                 foundTournament.matches = generateBrackets(winners, foundTournament.id, foundTournament.round);
                 io.to(foundTournament.id).emit('next_round', { matches: foundTournament.matches, round: foundTournament.round });
-                // ✅ Notify next round players of their match
+                // Notify next round players of their match
                 setTimeout(() => {
                     foundTournament.matches.forEach(m => {
                         if (!m.bye) {
+                            // Pre-warm rooms for next round
+                            const matchRoom = rooms.get(m.id);
+                            if (matchRoom) {
+                                matchRoom.players = [];
+                                matchRoom.inRing = false;
+                            }
                             io.to(m.p1.id).emit('join_match', { roomId: m.id, opponent: m.p2, tournamentId: foundTournament.id });
                             io.to(m.p2.id).emit('join_match', { roomId: m.id, opponent: m.p1, tournamentId: foundTournament.id });
                         }
@@ -234,10 +252,16 @@ io.on('connection', (socket) => {
         io.to(t.id).emit('tournament_started', { matches: t.matches, round: 1 });
         io.emit('available_tournaments', getAvailableTournaments());
         
-        // ✅ Delay join_match so players can see the bracket screen for a few seconds
+        // Delay join_match so players can see the bracket screen for a few seconds
         setTimeout(() => {
             t.matches.forEach(m => {
                 if (!m.bye) {
+                    // Pre-warm rooms: ensure both players are in the socket room before match starts
+                    const matchRoom = rooms.get(m.id);
+                    if (matchRoom) {
+                        matchRoom.players = []; // Reset for fresh match
+                        matchRoom.inRing = false;
+                    }
                     io.to(m.p1.id).emit('join_match', { roomId: m.id, opponent: m.p2, tournamentId: t.id });
                     io.to(m.p2.id).emit('join_match', { roomId: m.id, opponent: m.p1, tournamentId: t.id });
                 }
@@ -296,9 +320,22 @@ io.on('connection', (socket) => {
         }
     });
 
+    socket.on('player_in_ring', (data) => {
+        const { roomId } = data;
+        const room = rooms.get(roomId);
+        if (room) {
+            const player = room.players.find(p => p.id === socket.id);
+            if (player) player.inRing = true;
+            
+            if (room.players.length === 2 && room.players.every(p => p.inRing)) {
+                io.to(roomId).emit('both_players_in_ring');
+            }
+        }
+    });
+
     socket.on('player_move', (data) => {
         const { roomId, ...moveData } = data;
-        socket.to(roomId).emit('opponent_move', moveData);
+        socket.volatile.to(roomId).emit('opponent_move', moveData);
     });
 
     socket.on('player_attack', (data) => {
@@ -368,44 +405,52 @@ io.on('connection', (socket) => {
     socket.on('disconnect', () => {
         console.log('User disconnected:', socket.id);
         
-        // Handle tournament logic
-        for (let [id, t] of tournaments.entries()) {
-            if (t.active) {
-                const activeMatch = t.matches.find(m => !m.winner && ((m.p1 && m.p1.id === socket.id) || (m.p2 && m.p2.id === socket.id)));
-                if (activeMatch) {
-                    const winner = (activeMatch.p1 && activeMatch.p1.id === socket.id) ? activeMatch.p2 : activeMatch.p1;
-                    if (winner) {
-                        console.log(`Player ${socket.id} disconnected. Match ${activeMatch.id} won by ${winner.name} (forfeit).`);
-                        processTournamentWin(activeMatch.id, winner.id);
+        // M-7: Grace period para micro-cortes de red en móviles
+        setTimeout(() => {
+            if (io.sockets.sockets.has(socket.id) || socket.recovered) {
+                console.log(`Socket ${socket.id} recovered within grace period. Ignoring disconnect.`);
+                return;
+            }
+
+            // Handle tournament logic
+            for (let [id, t] of tournaments.entries()) {
+                if (t.active) {
+                    const activeMatch = t.matches.find(m => !m.winner && ((m.p1 && m.p1.id === socket.id) || (m.p2 && m.p2.id === socket.id)));
+                    if (activeMatch) {
+                        const winner = (activeMatch.p1 && activeMatch.p1.id === socket.id) ? activeMatch.p2 : activeMatch.p1;
+                        if (winner) {
+                            console.log(`Player ${socket.id} disconnected. Match ${activeMatch.id} won by ${winner.name} (forfeit).`);
+                            processTournamentWin(activeMatch.id, winner.id);
+                        }
+                    }
+                } else {
+                    const prevCount = t.players.length;
+                    t.players = t.players.filter(p => p.id !== socket.id);
+                    if (t.players.length !== prevCount) {
+                        io.to(t.id).emit('tournament_players_update', t.players);
                     }
                 }
-            } else {
-                const prevCount = t.players.length;
-                t.players = t.players.filter(p => p.id !== socket.id);
-                if (t.players.length !== prevCount) {
-                    io.to(t.id).emit('tournament_players_update', t.players);
+                
+                // Si el creador se desconecta y no está activo, borrar torneo
+                if (t.creatorId === socket.id && !t.active) {
+                    if (t.timeout) clearTimeout(t.timeout);
+                    tournaments.delete(id);
+                    io.emit('available_tournaments', getAvailableTournaments());
+                    io.to(t.id).emit('tournament_cancelled', 'El torneo ha sido cancelado porque el creador se desconectó.');
                 }
             }
-            
-            // Si el creador se desconecta y no está activo, borrar torneo
-            if (t.creatorId === socket.id && !t.active) {
-                if (t.timeout) clearTimeout(t.timeout);
-                tournaments.delete(id);
-                io.emit('available_tournaments', getAvailableTournaments());
-                io.to(t.id).emit('tournament_cancelled', 'El torneo ha sido cancelado porque el creador se desconectó.');
-            }
-        }
 
-        // Clean up rooms
-        rooms.forEach((room, roomId) => {
-            const playerIndex = room.players.findIndex(p => p.id === socket.id);
-            if (playerIndex !== -1) {
-                room.players.splice(playerIndex, 1);
-                io.to(roomId).emit('opponent_left_match');
-                io.to(roomId).emit('player_left', socket.id);
-                if (room.players.length === 0) rooms.delete(roomId);
-            }
-        });
+            // Clean up rooms
+            rooms.forEach((room, roomId) => {
+                const playerIndex = room.players.findIndex(p => p.id === socket.id);
+                if (playerIndex !== -1) {
+                    room.players.splice(playerIndex, 1);
+                    io.to(roomId).emit('opponent_left_match');
+                    io.to(roomId).emit('player_left', socket.id);
+                    if (room.players.length === 0) rooms.delete(roomId);
+                }
+            });
+        }, 5000); // 5 segundos de espera
     });
 });
 

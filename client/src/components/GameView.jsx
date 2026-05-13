@@ -26,6 +26,7 @@ function GameView({ roomId, playerData, gameState, onEnd }) {
   const [isPaused, setIsPaused] = useState(false);
   const [showRoundAnnounce, setShowRoundAnnounce] = useState(false); // M-1
   const [showTutorial, setShowTutorial] = useState(false); // M-6
+  const [waitingForOpponent, setWaitingForOpponent] = useState(false); // M-6 Sync
   const [rematchStatus, setRematchStatus] = useState(null); // N-6: null | 'waiting' | 'requested' | 'declined'
   const roundEndingRef = useRef(false);
   const roundAnnounceRef = useRef(null);
@@ -33,6 +34,17 @@ function GameView({ roomId, playerData, gameState, onEnd }) {
   useEffect(() => {
     // M-6: Always show tutorial before match starts
     setShowTutorial(true);
+  }, []);
+
+  useEffect(() => {
+    const handleBothReady = () => {
+        setWaitingForOpponent(false);
+        setShowTutorial(false);
+        triggerRoundAnnounce();
+        if (gameRef.current) gameRef.current.events.emit('startMatch');
+    };
+    socket.on('both_players_in_ring', handleBothReady);
+    return () => socket.off('both_players_in_ring', handleBothReady);
   }, []);
 
   const triggerRoundAnnounce = () => {
@@ -73,7 +85,7 @@ function GameView({ roomId, playerData, gameState, onEnd }) {
 
   useEffect(() => {
     let timer;
-    if (hp.p1 > 0 && hp.p2 > 0 && timeLeft > 0 && !isPaused) {
+    if (hp.p1 > 0 && hp.p2 > 0 && timeLeft > 0 && !isPaused && !showTutorial) {
       timer = setInterval(() => {
         setTimeLeft(prev => {
           if (prev <= 1) {
@@ -85,7 +97,7 @@ function GameView({ roomId, playerData, gameState, onEnd }) {
       }, 1000);
     }
     return () => clearInterval(timer);
-  }, [hp.p1 > 0, hp.p2 > 0, timeLeft <= 0, isPaused]);
+  }, [hp.p1 > 0, hp.p2 > 0, timeLeft <= 0, isPaused, showTutorial]);
 
   useEffect(() => {
       const handleOpponentLeft = () => {
@@ -201,8 +213,7 @@ function GameView({ roomId, playerData, gameState, onEnd }) {
 
       // N-4: Pass soundManager instance to Phaser scene
       game.scene.start('FighterGame', { socket, roomId, playerData, gameState, soundManager: soundRef.current });
-      // M-1: Show round announce when game starts
-      triggerRoundAnnounce();
+      // M-1: Will be triggered when tutorial is closed
       
       game.events.on('updateHP', (data) => {
         setHp(prev => {
@@ -217,31 +228,32 @@ function GameView({ roomId, playerData, gameState, onEnd }) {
             
             const loserId = newHP.p1 <= 0 ? playerData.id : (opponent?.id || 'CPU');
             if (gameRef.current) gameRef.current.events.emit('gameOver', { loserId });
-            setWins(w => {
-                const winnerKey = newHP.p1 <= 0 ? 'p2' : 'p1';
-                const nextWins = { ...w, [winnerKey]: w[winnerKey] + 1 };
+            
+            // Move win update to next microtask so React doesn't batch it inside setHp
+            const winnerKey = newHP.p1 <= 0 ? 'p2' : 'p1';
+            setTimeout(() => {
+                setWins(w => {
+                    const nextWins = { ...w, [winnerKey]: w[winnerKey] + 1 };
 
-                if (nextWins.p1 >= 2 || nextWins.p2 >= 2) {
-                    // N-1 fix: en multijugador p2 es el oponente real, no 'CPU'
-                    const wId = nextWins.p1 >= 2 ? playerData.id : (opponent?.id || 'CPU');
-                    setMatchWinnerId(wId);
-                } else {
-                    setTimeout(() => {
-                        roundEndingRef.current = false;
-                        setRound(r => { 
-                            return r + 1;
-                        });
-                        setHp({ p1: 100, p2: 100 });
-                        setDelayedHp({ p1: 100, p2: 100 });
-                        setTimeLeft(60);
-                        triggerRoundAnnounce(); // M-1: show announce for new round
-                        if (gameRef.current) {
-                            gameRef.current.events.emit('resetRound');
-                        }
-                    }, 2500);
-                }
-                return nextWins;
-            });
+                    if (nextWins.p1 >= 2 || nextWins.p2 >= 2) {
+                        const wId = nextWins.p1 >= 2 ? playerData.id : (opponent?.id || 'CPU');
+                        setMatchWinnerId(wId);
+                    } else {
+                        setTimeout(() => {
+                            roundEndingRef.current = false;
+                            setRound(r => r + 1);
+                            setHp({ p1: 100, p2: 100 });
+                            setDelayedHp({ p1: 100, p2: 100 });
+                            setTimeLeft(60);
+                            triggerRoundAnnounce();
+                            if (gameRef.current) {
+                                gameRef.current.events.emit('resetRound');
+                            }
+                        }, 2500);
+                    }
+                    return nextWins;
+                });
+            }, 0);
           }
           return newHP;
         });
@@ -291,9 +303,9 @@ function GameView({ roomId, playerData, gameState, onEnd }) {
                 <div className="absolute top-0 bottom-0 left-0 bg-red-700 transition-all duration-500" style={{ width: `${delayedHp.p1}%` }}></div>
                 <div className="absolute top-0 bottom-0 left-0 bg-green-500 shadow-[0_0_15px_#22c55e] transition-all duration-150" style={{ width: `${hp.p1}%` }}></div>
               </div>
-              <div className="hidden md:flex gap-1 mt-1 justify-start">
+              <div className="flex gap-1 mt-0.5 md:mt-1 justify-start">
                 {[...Array(2)].map((_, i) => (
-                    <div key={i} className={`w-2.5 h-2.5 md:w-4 md:h-4 rounded-full border border-neutral-600 ${i < wins.p1 ? 'bg-green-500 shadow-[0_0_10px_#22c55e]' : 'bg-black'}`} />
+                    <div key={i} className={`w-2.5 h-2.5 md:w-4 md:h-4 rounded-full border transition-all duration-500 ${i < wins.p1 ? 'bg-green-500 border-green-400 shadow-[0_0_10px_#22c55e] scale-110' : 'bg-neutral-900 border-neutral-600'}`} />
                 ))}
               </div>
             </div>
@@ -381,9 +393,9 @@ function GameView({ roomId, playerData, gameState, onEnd }) {
                 <div className="absolute top-0 bottom-0 right-0 bg-neutral-600 transition-all duration-500" style={{ width: `${delayedHp.p2}%` }}></div>
                 <div className="absolute top-0 bottom-0 right-0 bg-red-500 shadow-[0_0_15px_#ef4444] transition-all duration-150" style={{ width: `${hp.p2}%` }}></div>
               </div>
-              <div className="hidden md:flex flex-row-reverse gap-1 mt-1 justify-start">
+              <div className="flex flex-row-reverse gap-1 mt-0.5 md:mt-1 justify-start">
                 {[...Array(2)].map((_, i) => (
-                    <div key={i} className={`w-2.5 h-2.5 md:w-4 md:h-4 rounded-full border border-neutral-600 ${i < wins.p2 ? 'bg-red-500 shadow-[0_0_10px_#ef4444]' : 'bg-black'}`} />
+                    <div key={i} className={`w-2.5 h-2.5 md:w-4 md:h-4 rounded-full border transition-all duration-500 ${i < wins.p2 ? 'bg-red-500 border-red-400 shadow-[0_0_10px_#ef4444] scale-110' : 'bg-neutral-900 border-neutral-600'}`} />
                 ))}
               </div>
             </div>
@@ -413,7 +425,8 @@ function GameView({ roomId, playerData, gameState, onEnd }) {
 
         {/* KO OVERLAY */}
         {(hp.p1 <= 0 || hp.p2 <= 0) && !matchWinnerId && (
-          <div className="absolute inset-0 z-50 bg-black/80 flex items-center justify-center backdrop-blur-sm">
+          <div className="absolute inset-0 z-50 flex items-center justify-center pointer-events-none"
+               style={{ background: 'radial-gradient(ellipse at center, rgba(0,0,0,0.15) 0%, rgba(0,0,0,0.4) 100%)' }}>
             <h2 className="font-['Bebas_Neue'] text-[15vw] md:text-[10vw] text-red-600 italic animate-pulse drop-shadow-[0_0_30px_#dc2626]" style={{ maxWidth: '400px' }}>K.O.</h2>
           </div>
         )}
@@ -650,18 +663,30 @@ function GameView({ roomId, playerData, gameState, onEnd }) {
 
               {/* START BUTTON */}
               <div className="mt-12 flex flex-col items-center gap-4">
-                <button 
-                  onClick={() => {
-                    setShowTutorial(false);
-                    if (gameRef.current) {
-                        gameRef.current.events.emit('startMatch');
-                    }
-                  }}
-                  className="px-12 py-4 bg-gradient-to-br from-red-700 to-red-900 border border-red-500 text-white text-3xl font-['Bebas_Neue'] tracking-[0.2em] hover:scale-105 active:scale-95 transition-all duration-300 shadow-[0_0_40px_rgba(255,0,0,0.5)] hover:shadow-[0_0_60px_rgba(255,0,0,0.8)]"
-                >
-                  ¡ENTRAR AL RING!
-                </button>
-                <p className="text-neutral-500 font-['Bebas_Neue'] text-sm tracking-[0.3em] animate-pulse">EL COMBATE COMENZARÁ AL CERRAR ESTA VENTANA</p>
+                {waitingForOpponent ? (
+                  <div className="px-12 py-4 bg-gradient-to-br from-neutral-700 to-neutral-900 border border-neutral-500 text-white text-3xl font-['Bebas_Neue'] tracking-[0.2em] shadow-[0_0_40px_rgba(255,255,255,0.2)] animate-pulse">
+                    ESPERANDO AL RIVAL...
+                  </div>
+                ) : (
+                  <>
+                    <button 
+                      onClick={() => {
+                        if (gameState.players.length === 1) {
+                            setShowTutorial(false);
+                            triggerRoundAnnounce();
+                            if (gameRef.current) gameRef.current.events.emit('startMatch');
+                        } else {
+                            socket.emit('player_in_ring', { roomId });
+                            setWaitingForOpponent(true);
+                        }
+                      }}
+                      className="px-12 py-4 bg-gradient-to-br from-red-700 to-red-900 border border-red-500 text-white text-3xl font-['Bebas_Neue'] tracking-[0.2em] hover:scale-105 active:scale-95 transition-all duration-300 shadow-[0_0_40px_rgba(255,0,0,0.5)] hover:shadow-[0_0_60px_rgba(255,0,0,0.8)]"
+                    >
+                      ¡ENTRAR AL RING!
+                    </button>
+                    <p className="text-neutral-500 font-['Bebas_Neue'] text-sm tracking-[0.3em] animate-pulse">EL COMBATE COMENZARÁ AL CERRAR ESTA VENTANA</p>
+                  </>
+                )}
               </div>
 
             </div>

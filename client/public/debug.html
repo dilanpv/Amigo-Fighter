@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Amigo Fighter - Frame Debugger</title>
+    <style>
+        body { font-family: Arial, sans-serif; background: #222; color: white; padding: 20px; }
+        .character-section { margin-bottom: 50px; }
+        .grid { display: flex; flex-wrap: wrap; gap: 10px; }
+        .frame-container { position: relative; border: 1px solid #444; background: #111; width: 128px; height: 192px; }
+        .frame-number { position: absolute; top: 5px; left: 5px; background: red; color: white; padding: 2px 5px; font-weight: bold; border-radius: 3px; font-size: 14px; z-index: 10; }
+        .frame-image { position: absolute; top: 0; left: 0; width: 1408px; height: 768px; transform-origin: top left; }
+    </style>
+</head>
+<body>
+    <h1>Visor de Frames (Debugging)</h1>
+    <p>Revisa qué número exacto (Índice de 0 a 37) corresponde a cada animación para cada personaje. Anota los rangos y dime: "Para el Ninja, el gancho es del X al Y".</p>
+    
+    <div id="characters"></div>
+
+    <script>
+        const characters = [
+            { id: 'EL_NINJA', file: 'assets/EL_NINJA.png', frames: 38 },
+            { id: 'EL_AGRESIVO', file: 'assets/EL_AGRESIVO.png', frames: 38 },
+            { id: 'EL_CLASICO', file: 'assets/EL_CLASICO.png', frames: 38 },
+            { id: 'EL_CAMPEON', file: 'assets/EL_CAMPEON.png', frames: 38 }
+        ];
+
+        const container = document.getElementById('characters');
+
+        characters.forEach(char => {
+            const section = document.createElement('div');
+            section.className = 'character-section';
+            section.innerHTML = `<h2>${char.id}</h2><div class="grid" id="grid-${char.id}"></div>`;
+            container.appendChild(section);
+
+            const grid = document.getElementById(`grid-${char.id}`);
+            
+            for (let i = 0; i < char.frames; i++) {
+                const col = i % 11;
+                const row = Math.floor(i / 11);
+                const xOffset = -(col * 128);
+                const yOffset = -(row * 192);
+
+                const frameDiv = document.createElement('div');
+                frameDiv.className = 'frame-container';
+                frameDiv.innerHTML = `
+                    <div class="frame-number">${i}</div>
+                    <div style="width: 128px; height: 192px; overflow: hidden; position: relative;">
+                        <img src="${char.file}" class="frame-image" style="transform: translate(${xOffset}px, ${yOffset}px);">
+                    </div>
+                `;
+                grid.appendChild(frameDiv);
+            }
+        });
+    </script>
+</body>
+</html>

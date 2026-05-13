@@ -1,0 +1,548 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Amigo Fighter — Prompts</title>
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=JetBrains+Mono:wght@400;700&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet">
+<style>
+*{box-sizing:border-box;margin:0;padding:0;}
+:root{
+  --red:#e63946;--dark:#0d0d0f;--dark2:#141418;--dark3:#1c1c22;
+  --light:#f0ece4;--muted:rgba(240,236,228,0.5);--border:rgba(240,236,228,0.1);
+  --ninja:#7c3aed;--agresivo:#dc2626;--campeon:#d97706;--clasico:#2563eb;
+}
+body{font-family:'DM Sans',sans-serif;background:var(--dark);color:var(--light);min-height:100vh;}
+
+/* TOP BAR */
+header{position:sticky;top:0;z-index:100;background:rgba(13,13,15,0.95);backdrop-filter:blur(12px);
+  border-bottom:1px solid var(--border);padding:14px 24px;display:flex;align-items:center;gap:16px;flex-wrap:wrap;}
+.logo{font-family:'Bebas Neue',sans-serif;font-size:22px;letter-spacing:3px;color:var(--red);}
+.total-badge{font-size:11px;letter-spacing:2px;text-transform:uppercase;color:var(--muted);
+  border:1px solid var(--border);padding:4px 12px;border-radius:20px;}
+.copied-toast{position:fixed;bottom:24px;right:24px;background:var(--red);color:#fff;
+  padding:12px 24px;border-radius:8px;font-size:13px;font-weight:500;letter-spacing:1px;
+  opacity:0;transform:translateY(10px);transition:all .3s;z-index:999;pointer-events:none;}
+.copied-toast.show{opacity:1;transform:translateY(0);}
+
+/* CHARACTER TABS */
+.char-tabs{display:flex;gap:2px;padding:16px 24px 0;border-bottom:1px solid var(--border);
+  background:var(--dark2);overflow-x:auto;}
+.char-tab{padding:10px 24px;font-size:13px;font-weight:500;letter-spacing:1px;cursor:pointer;
+  border-radius:8px 8px 0 0;border:1px solid transparent;border-bottom:none;
+  transition:all .2s;white-space:nowrap;color:var(--muted);}
+.char-tab:hover{color:var(--light);background:rgba(255,255,255,0.05);}
+.char-tab.active{color:#fff;border-color:var(--border);}
+.char-tab[data-char="ninja"].active{background:rgba(124,58,237,0.2);border-color:#7c3aed;color:#a78bfa;}
+.char-tab[data-char="agresivo"].active{background:rgba(220,38,38,0.2);border-color:#dc2626;color:#fca5a5;}
+.char-tab[data-char="campeon"].active{background:rgba(217,119,6,0.2);border-color:#d97706;color:#fcd34d;}
+.char-tab[data-char="clasico"].active{background:rgba(37,99,235,0.2);border-color:#2563eb;color:#93c5fd;}
+
+/* MAIN LAYOUT */
+.main{display:grid;grid-template-columns:220px 1fr;min-height:calc(100vh - 110px);}
+
+/* SIDEBAR */
+.sidebar{background:var(--dark2);border-right:1px solid var(--border);padding:16px 0;
+  position:sticky;top:57px;height:calc(100vh - 57px);overflow-y:auto;}
+.anim-group{cursor:pointer;padding:10px 20px;font-size:12px;letter-spacing:2px;
+  text-transform:uppercase;color:var(--muted);transition:all .2s;display:flex;
+  align-items:center;justify-content:space-between;}
+.anim-group:hover{color:var(--light);background:rgba(255,255,255,0.04);}
+.anim-group.active{color:#fff;font-weight:500;}
+.anim-group .count{font-size:10px;background:rgba(255,255,255,0.08);
+  padding:2px 7px;border-radius:10px;}
+.char-tab[data-char="ninja"] ~ .anim-group.active,.sidebar[data-char="ninja"] .anim-group.active{color:#a78bfa;}
+.sidebar-title{font-size:10px;letter-spacing:3px;text-transform:uppercase;
+  color:rgba(240,236,228,0.2);padding:8px 20px 4px;margin-top:8px;}
+
+/* CONTENT */
+.content{padding:24px;overflow-y:auto;}
+.anim-section{display:none;}
+.anim-section.active{display:block;}
+.section-header{margin-bottom:20px;}
+.section-header h2{font-family:'Bebas Neue',sans-serif;font-size:36px;letter-spacing:2px;margin-bottom:4px;}
+.section-header p{font-size:13px;color:var(--muted);}
+
+.frames-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(380px,1fr));gap:12px;}
+
+.frame-card{background:var(--dark2);border:1px solid var(--border);border-radius:10px;overflow:hidden;
+  transition:border-color .2s;}
+.frame-card:hover{border-color:rgba(240,236,228,0.25);}
+.frame-header{padding:12px 16px;display:flex;align-items:center;justify-content:space-between;
+  border-bottom:1px solid var(--border);}
+.frame-num{font-family:'Bebas Neue',sans-serif;font-size:18px;letter-spacing:1px;}
+.frame-name{font-size:11px;letter-spacing:2px;text-transform:uppercase;color:var(--muted);}
+.copy-btn{padding:5px 14px;border-radius:6px;border:1px solid var(--border);background:transparent;
+  color:var(--muted);font-size:11px;letter-spacing:1px;cursor:pointer;transition:all .15s;font-family:'DM Sans',sans-serif;}
+.copy-btn:hover{background:var(--red);border-color:var(--red);color:#fff;}
+.copy-btn:active{transform:scale(.95);}
+.frame-body{padding:14px 16px;}
+.prompt-text{font-family:'JetBrains Mono',monospace;font-size:11.5px;line-height:1.7;
+  color:rgba(240,236,228,0.85);white-space:pre-wrap;word-break:break-word;}
+.highlight{color:#fbbf24;}
+.highlight-red{color:#f87171;}
+.filename{font-size:10px;letter-spacing:1px;color:rgba(240,236,228,0.3);margin-top:10px;
+  font-family:'JetBrains Mono',monospace;}
+
+/* Color accents per char */
+[data-active-char="ninja"] .frame-header{border-bottom-color:rgba(124,58,237,0.3);}
+[data-active-char="ninja"] .frame-num{color:#a78bfa;}
+[data-active-char="agresivo"] .frame-num{color:#fca5a5;}
+[data-active-char="campeon"] .frame-num{color:#fcd34d;}
+[data-active-char="clasico"] .frame-num{color:#93c5fd;}
+
+@media(max-width:768px){
+  .main{grid-template-columns:1fr;}
+  .sidebar{position:static;height:auto;display:flex;overflow-x:auto;padding:8px 0;
+    border-right:none;border-bottom:1px solid var(--border);}
+  .anim-group{white-space:nowrap;padding:8px 14px;}
+  .sidebar-title{display:none;}
+  .frames-grid{grid-template-columns:1fr;}
+}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo">Amigo Fighter</div>
+  <div class="total-badge">152 frames · 4 personajes · 10 animaciones</div>
+</header>
+
+<div class="char-tabs" id="charTabs">
+  <div class="char-tab active" data-char="ninja">⚫ El Ninja</div>
+  <div class="char-tab" data-char="agresivo">🔴 El Agresivo</div>
+  <div class="char-tab" data-char="campeon">🥇 El Campeón</div>
+  <div class="char-tab" data-char="clasico">🔵 El Clásico</div>
+</div>
+
+<div class="main" id="mainLayout" data-active-char="ninja">
+  <div class="sidebar" id="sidebar">
+    <div class="sidebar-title">Animaciones</div>
+    <div class="anim-group active" data-anim="idle">Idle <span class="count">4f</span></div>
+    <div class="anim-group" data-anim="walk">Walk <span class="count">6f</span></div>
+    <div class="anim-group" data-anim="jump">Jump <span class="count">3f</span></div>
+    <div class="anim-group" data-anim="jab">Jab <span class="count">4f</span></div>
+    <div class="anim-group" data-anim="hook">Hook <span class="count">4f</span></div>
+    <div class="anim-group" data-anim="kick">Kick <span class="count">4f</span></div>
+    <div class="anim-group" data-anim="hit">Hit <span class="count">3f</span></div>
+    <div class="anim-group" data-anim="special">Special <span class="count">4f</span></div>
+    <div class="anim-group" data-anim="block">Block <span class="count">2f</span></div>
+    <div class="anim-group" data-anim="ko">KO <span class="count">4f</span></div>
+  </div>
+  <div class="content" id="content"></div>
+</div>
+
+<div class="copied-toast" id="toast">✓ Prompt copiado</div>
+
+<script>
+const BASE = {
+  ninja: {
+    color:'#a78bfa', label:'El Ninja ⚫',
+    desc:'Luchador delgado y alto, traje ninja negro y morado oscuro, faja blanca, antebrazos y espinillas envueltos en tela oscura, descalzo. Postura muy baja de combate, una mano extendida hacia adelante.',
+    palette:'Dark purple #4B0082, black #111111, white #EEEEEE for belt.',
+    stance:'Very low crouching ninja stance, one hand forward, knees bent, angular and tense silhouette.',
+    special_fx:'Body splits into 3 dark purple smoke shadow clones.'
+  },
+  agresivo: {
+    color:'#fca5a5', label:'El Agresivo 🔴',
+    desc:'Extremely muscular dark-skinned MMA fighter, bare torso with battle scars, black MMA shorts with red stripes, black fingerless gloves, red wrist wraps, barefoot.',
+    palette:'Black #111111 shorts, red #CC0000 stripes and wraps, dark skin #3D1C02.',
+    stance:'Aggressive forward-leaning stance, fists always raised high, wide and imposing build.',
+    special_fx:'Full body engulfed in red and orange fire flames, charges forward like a flaming torpedo.'
+  },
+  campeon: {
+    color:'#fcd34d', label:'El Campeón 🥇',
+    desc:'Tall athletic boxer, olive/mediterranean skin, golden championship shorts with laurel pattern, gold belt, white hand wraps, no shirt, barefoot.',
+    palette:'Gold #FFD700 shorts and belt, white #FFFFFF wraps, olive skin #C68642.',
+    stance:'Classic upright elegant boxing stance, precise and clean movements, confident posture.',
+    special_fx:'Body radiates explosive golden sparkling light burst, powered punch with golden energy.'
+  },
+  clasico: {
+    color:'#93c5fd', label:'El Clásico 🔵',
+    desc:'Athletic martial artist, medium latino skin, blue gi with gold trim, black belt, barefoot.',
+    palette:'Royal blue #1A4FA0 gi, gold #D4A010 trim, black #111111 belt.',
+    stance:'Balanced martial arts stance, one hand forward in guard, centered and powerful.',
+    special_fx:'Blue electric energy aura explodes around body, charged electric punch.'
+  }
+};
+
+const ANIMS = {
+  idle: {
+    label:'Idle — Respirando / Quieto', frames: 4,
+    desc:'Personaje en postura base, respiración sutil, leve movimiento vertical del torso.',
+    ninja:[
+      'IDLE FRAME 1/4 — Base stance. Character in low ninja crouch, one hand forward, other guarding. Slight purple energy pulse around fists. This is the neutral reference pose. Feet at Y=180.',
+      'IDLE FRAME 2/4 — Slight inhale. Torso rises 2-3px. Purple energy glow intensifies slightly around hands. Weight shifts barely to back foot.',
+      'IDLE FRAME 3/4 — Peak inhale. Torso at highest point. Purple aura at maximum glow. Both hands maintain guard position.',
+      'IDLE FRAME 4/4 — Exhale, return. Torso descends back to frame 1 position. Energy fades to subtle pulse. Complete loop back to frame 1.',
+    ],
+    agresivo:[
+      'IDLE FRAME 1/4 — Base threatening stance. Character leaning forward aggressively, fists raised high. Heavy breathing visible in chest muscles. Slight heat shimmer/vapor around body. Feet at Y=180.',
+      'IDLE FRAME 2/4 — Deep inhale. Chest expands visibly, muscles tense more. Fists tighten. Slight forward weight shift.',
+      'IDLE FRAME 3/4 — Peak tension. Maximum chest expansion. Heat shimmer intensifies around shoulders. Eyes focused forward.',
+      'IDLE FRAME 4/4 — Controlled exhale. Chest relaxes slightly. Returns to frame 1 threatening stance. Heat shimmer reduces.',
+    ],
+    campeon:[
+      'IDLE FRAME 1/4 — Classic boxing guard. Perfectly upright, elegant stance. Weight balanced. Subtle golden sparkle on both fists. Feet at Y=180.',
+      'IDLE FRAME 2/4 — Weight shifts slightly to front foot. Fists rotate slightly inward. Golden gleam pulses on gloves.',
+      'IDLE FRAME 3/4 — Weight back to center. Shoulders relax 1px. Confident head position maintained.',
+      'IDLE FRAME 4/4 — Complete weight shift cycle returns to frame 1. Golden sparkles on fists at maximum.',
+    ],
+    clasico:[
+      'IDLE FRAME 1/4 — Balanced martial arts ready stance. One hand forward in guard. Blue electric energy pulses subtly on fists. Gi slightly moves. Feet at Y=180.',
+      'IDLE FRAME 2/4 — Slight inhale, torso rises 2px. Gi reacts to breathing. Blue aura intensifies on forward hand.',
+      'IDLE FRAME 3/4 — Peak breath. Forward hand advances 1px. Blue energy at maximum pulse.',
+      'IDLE FRAME 4/4 — Exhale, return to frame 1. Energy fades. Gi settles. Perfect loop.',
+    ]
+  },
+  walk: {
+    label:'Walk — Caminando', frames: 6,
+    desc:'Ciclo completo de caminar hacia adelante. Pie siempre al mismo punto Y.',
+    ninja:[
+      'WALK FRAME 1/6 — Left foot steps forward silently, right foot planted. Body low, almost gliding. Arms in guard. Foot at Y=180.',
+      'WALK FRAME 2/6 — Weight transfers to left foot. Right foot begins to lift. Body moves forward 4px. Slight purple motion blur.',
+      'WALK FRAME 3/6 — Right foot in mid-air at knee height. Body at lowest crouch point. Both arms maintain guard.',
+      'WALK FRAME 4/6 — Right foot plants forward, left foot lifts. Mirror of frame 1. Body advances 4px more.',
+      'WALK FRAME 5/6 — Weight on right foot. Left foot lifts. Body at mid-height in cycle.',
+      'WALK FRAME 6/6 — Left foot in mid-air. Body at lowest point. Returns to frame 1 position for seamless loop.',
+    ],
+    agresivo:[
+      'WALK FRAME 1/6 — Heavy threatening advance. Right foot steps forward, full weight shift. Arms swing with momentum. Foot at Y=180.',
+      'WALK FRAME 2/6 — Full weight on right foot. Left foot plants. Torso lurches forward with each step. Muscles flex visibly.',
+      'WALK FRAME 3/6 — Left foot forward. Body at lowest point in step cycle. Shoulders roll forward.',
+      'WALK FRAME 4/6 — Both feet briefly grounded. Transition step. Fists remain raised. Body advances.',
+      'WALK FRAME 5/6 — Right foot lifts and advances. Torso tilts forward. Heat shimmer moves with character.',
+      'WALK FRAME 6/6 — Right foot plants. Completes cycle. Returns to frame 1 seamlessly.',
+    ],
+    campeon:[
+      'WALK FRAME 1/6 — Elegant boxing footwork. Right foot slides forward. Classic boxing step-drag. Foot at Y=180.',
+      'WALK FRAME 2/6 — Left foot follows right with drag. Body stays perfectly upright. Guard maintained throughout.',
+      'WALK FRAME 3/6 — Weight centered during transition. Golden sparkle on forward fist.',
+      'WALK FRAME 4/6 — Left foot steps forward. Cross-step pattern. Body glides without bobbing.',
+      'WALK FRAME 5/6 — Right foot drags to follow. Smooth elegant footwork.',
+      'WALK FRAME 6/6 — Returns to neutral guard position. Seamless loop to frame 1.',
+    ],
+    clasico:[
+      'WALK FRAME 1/6 — Martial arts advance step. Right foot forward, gi flows with movement. Blue energy on fists. Foot at Y=180.',
+      'WALK FRAME 2/6 — Weight shifts forward. Left foot follows. Gi fabric moves dynamically.',
+      'WALK FRAME 3/6 — Mid-step. Both feet briefly close together. Guard hand rotates slightly.',
+      'WALK FRAME 4/6 — Left foot advances. Gi hem rises with movement. Blue aura trails fists.',
+      'WALK FRAME 5/6 — Weight on left foot. Right arm swings forward slightly.',
+      'WALK FRAME 6/6 — Right foot advances. Returns to cycle start. Gi settles.',
+    ]
+  },
+  jump: {
+    label:'Jump — Saltando', frames: 3,
+    desc:'Despegue, punto máximo en el aire, aterrizaje.',
+    ninja:[
+      'JUMP FRAME 1/3 — Takeoff. Legs bend deeply, both feet still on ground (crouch before jump). Arms pull back for momentum. Purple energy concentrates under feet. Foot at Y=180.',
+      'JUMP FRAME 2/3 — Peak air. Body fully extended, legs tucked toward chest in compact position. Arms ready to strike. Purple energy streams upward. Character floated 40px above normal ground.',
+      'JUMP FRAME 3/3 — Landing impact. Both feet hit ground, knees absorb impact with deep bend. Arms out for balance. Dust/energy burst at feet. Returns to foot Y=180.',
+    ],
+    agresivo:[
+      'JUMP FRAME 1/3 — Explosive takeoff. Deep knee bend, massive leg power visible. Both fists pull back for overhead strike. Fire begins at feet. Foot at Y=180.',
+      'JUMP FRAME 2/3 — Peak height. Body compact, fists raised overhead for downward smash. Fire trails behind. Character floated 45px up.',
+      'JUMP FRAME 3/3 — Heavy landing. Shockwave impact on ground. Both fists slam position. Massive dust/fire explosion at feet. Deep knee absorption. Returns to Y=180.',
+    ],
+    campeon:[
+      'JUMP FRAME 1/3 — Technical jump. Controlled knee bend takeoff, not explosive. Guard maintained. Golden sparkle at feet. Foot at Y=180.',
+      'JUMP FRAME 2/3 — Clean air position. Legs slightly bent, body upright. Fists ready for aerial hook. Character at 35px above ground.',
+      'JUMP FRAME 3/3 — Precise landing. Soft knee absorption. Immediately returns to boxing guard. Golden shimmer on impact. Foot at Y=180.',
+    ],
+    clasico:[
+      'JUMP FRAME 1/3 — Martial arts leap. Deep stance crouch, gi compresses. Blue energy charges at feet. Foot at Y=180.',
+      'JUMP FRAME 2/3 — Mid-air. Legs partially tucked. Gi flows upward with momentum. Blue energy trails. 40px above ground.',
+      'JUMP FRAME 3/3 — Landing in fighting stance. Gi settles. Blue energy burst at impact. Perfect stance. Foot at Y=180.',
+    ]
+  },
+  jab: {
+    label:'Jab — Golpe Recto Rápido', frames: 4,
+    desc:'F1 postura, F2 extensión completa del puño, F3 retracción, F4 vuelta a postura.',
+    ninja:[
+      'JAB FRAME 1/4 — Starting stance. Weight slightly shifted to back foot, ready to drive forward. Front fist cocked back slightly. Purple energy building on front fist. Foot at Y=180.',
+      'JAB FRAME 2/4 — IMPACT. Front arm FULLY extended forward, fist at maximum reach. Body weight drives forward 3px. Purple energy EXPLODES from fist on impact. Speed lines behind arm.',
+      'JAB FRAME 3/4 — Retraction. Arm pulls back at 50% extension. Speed blur trails the fist. Body returns to neutral.',
+      'JAB FRAME 4/4 — Return to stance. Arm fully back in guard position. Purple energy fades. Foot at Y=180.',
+    ],
+    agresivo:[
+      'JAB FRAME 1/4 — Coiled stance. Rear foot drives weight forward. Front shoulder drops slightly. Fist tight. Foot at Y=180.',
+      'JAB FRAME 2/4 — EXPLOSIVE IMPACT. Arm fully extended with incredible force. Air distortion wave in front of fist. Body drives 4px forward. Red energy burst.',
+      'JAB FRAME 3/4 — Snapping retraction. Arm at 40% on way back. Muscles visibly snap back. Body absorbs recoil.',
+      'JAB FRAME 4/4 — Back to aggressive guard. Fists up. Red energy dissipates. Foot at Y=180.',
+    ],
+    campeon:[
+      'JAB FRAME 1/4 — Technical setup. Weight on front foot, rear heel slightly raised. Classic jab prep. Golden gleam on front fist. Foot at Y=180.',
+      'JAB FRAME 2/4 — PERFECT JAB. Textbook extension. Fist fully extended, shoulder driving forward. Golden flash on impact. Wrist rotates at contact.',
+      'JAB FRAME 3/4 — Technical retraction. Arm returns smoothly. Shoulder pulls back. Balance maintained throughout.',
+      'JAB FRAME 4/4 — Guard restored. Elegant recovery. Weight rebalances. Foot at Y=180.',
+    ],
+    clasico:[
+      'JAB FRAME 1/4 — Martial arts prep. Front hand recoils slightly. Gi sleeve settles. Blue energy charges on fist. Foot at Y=180.',
+      'JAB FRAME 2/4 — STRIKE. Full arm extension. Gi sleeve pulls back with speed. Blue electric flash on impact.',
+      'JAB FRAME 3/4 — Retraction. Gi flows back. Electric energy trails fist.',
+      'JAB FRAME 4/4 — Guard position restored. Gi settles. Blue pulse fades. Foot at Y=180.',
+    ]
+  },
+  hook: {
+    label:'Hook — Gancho', frames: 4,
+    desc:'Rotación del torso, brazo doblado, impacto lateral, recuperación.',
+    ninja:[
+      'HOOK FRAME 1/4 — Wind-up. Torso rotates away from target 30°. Rear arm cocks back with elbow bent at 90°. Front hand guards face. Purple energy concentrates on hook fist. Foot at Y=180.',
+      'HOOK FRAME 2/4 — ROTATION. Torso pivots forward explosively. Arm sweeps in horizontal arc. Maximum rotation point. Purple arc energy trail behind the fist.',
+      'HOOK FRAME 3/4 — IMPACT POINT. Fist at maximum extension in arc. Elbow at 90°. Purple energy EXPLODES in circular burst. Body fully rotated facing forward.',
+      'HOOK FRAME 4/4 — Recovery. Arm completes arc and returns to guard. Torso rotates back to neutral. Energy fades. Foot at Y=180.',
+    ],
+    agresivo:[
+      'HOOK FRAME 1/4 — Coil. Massive torso rotation backward. Rear arm pulls back with raw power. Muscles in shoulder and chest flex. Red energy builds. Foot at Y=180.',
+      'HOOK FRAME 2/4 — DEVASTATING ROTATION. Full body power into the swing. Feet pivot. Torso uncoils like a spring. Red fire arc behind the arm.',
+      'HOOK FRAME 3/4 — CRUSHING IMPACT. Fist connects with full rotation power. Red fire explosion bursts from impact point. Ground crack effect under feet.',
+      'HOOK FRAME 4/4 — Follow-through. Momentum continues slightly past impact. Arm returns to high guard. Fire dissipates. Foot at Y=180.',
+    ],
+    campeon:[
+      'HOOK FRAME 1/4 — Classic setup. Rear foot pivots, body begins rotation. Rear arm cocks with elbow at perfect 90°. Golden gleam on hook fist. Foot at Y=180.',
+      'HOOK FRAME 2/4 — Textbook rotation. Perfect boxing mechanics. Foot pivots, hip drives, shoulder follows. Golden arc energy trail.',
+      'HOOK FRAME 3/4 — PRECISE IMPACT. Fist connects with technical perfection. Golden flash burst at contact. Elbow perfectly horizontal.',
+      'HOOK FRAME 4/4 — Elegant recovery. Returns smoothly to guard. Golden sparkle fades. Weight rebalances. Foot at Y=180.',
+    ],
+    clasico:[
+      'HOOK FRAME 1/4 — Martial arts wind-up. Torso rotation. Gi flows with movement. Blue energy on rear fist. Foot at Y=180.',
+      'HOOK FRAME 2/4 — Powerful sweep. Gi fabric fans out with rotation. Blue electric arc builds.',
+      'HOOK FRAME 3/4 — IMPACT. Gi whips around body. Blue electric burst at fist impact point.',
+      'HOOK FRAME 4/4 — Recovery. Gi settles. Electric trail fades. Back to guard. Foot at Y=180.',
+    ]
+  },
+  kick: {
+    label:'Kick — Patada', frames: 4,
+    desc:'Rodilla levantada, pierna extendida al máximo, retracción, vuelta postura.',
+    ninja:[
+      'KICK FRAME 1/4 — Knee raise. Standing leg stable, kicking knee rises to waist height. Hands adjust guard. Weight shifts to planted foot. Purple energy concentrates on kicking foot. Foot at Y=180.',
+      'KICK FRAME 2/4 — EXTENSION. Leg extends forward at full speed to 85% height (head/chest level). Speed lines along shin. Purple energy slash effect.',
+      'KICK FRAME 3/4 — IMPACT POINT. Leg at MAXIMUM extension forward. Foot flat for impact. Purple energy EXPLODES at foot tip. Slight body lean back for balance.',
+      'KICK FRAME 4/4 — Retract and land. Leg pulls back quickly, foot plants. Returns to combat stance. Foot at Y=180.',
+    ],
+    agresivo:[
+      'KICK FRAME 1/4 — Power load. Knee drives upward with force. Hips rotate for maximum impact. Red flame begins at kicking foot. Foot at Y=180.',
+      'KICK FRAME 2/4 — EXPLOSIVE EXTENSION. Leg fires forward with raw power. Thick speed lines along entire leg. Muscles visibly explode.',
+      'KICK FRAME 3/4 — OBLITERATING IMPACT. Full leg extension. Shockwave radiates from foot. Red fire burst. Ground shakes effect.',
+      'KICK FRAME 4/4 — Plant and return. Kicking foot slams down. Aggressive stance restored. Fire dissipates. Foot at Y=180.',
+    ],
+    campeon:[
+      'KICK FRAME 1/4 — Boxing kick setup. Knee lifts with technical precision. Guard stays up throughout. Golden gleam at foot. Foot at Y=180.',
+      'KICK FRAME 2/4 — Technical extension. Leg drives forward with measured force. Golden trail along leg.',
+      'KICK FRAME 3/4 — TECHNICAL IMPACT. Perfect form extension. Golden flash at contact. Balance maintained.',
+      'KICK FRAME 4/4 — Controlled retract. Leg returns, stance recovers immediately. Golden shimmer fades. Foot at Y=180.',
+    ],
+    clasico:[
+      'KICK FRAME 1/4 — Martial arts knee raise. Gi rises with the motion. Blue energy charges at foot. Foot at Y=180.',
+      'KICK FRAME 2/4 — Powerful forward drive. Gi hem flies back. Blue electric trail along leg.',
+      'KICK FRAME 3/4 — FULL EXTENSION IMPACT. Gi snaps taut. Blue electric burst at foot.',
+      'KICK FRAME 4/4 — Controlled return. Gi settles. Energy fades. Back to stance. Foot at Y=180.',
+    ]
+  },
+  hit: {
+    label:'Hit — Recibir Golpe', frames: 3,
+    desc:'Impacto, máximo retroceso, recuperación hacia postura.',
+    ninja:[
+      'HIT FRAME 1/3 — IMPACT MOMENT. Body snaps backward from force. Head (white oval) whips back. Torso compressed from the hit. White flash outline around entire body. Stars/sparks from impact point. Foot at Y=180.',
+      'HIT FRAME 2/3 — MAXIMUM RECOIL. Body at furthest backward point. Arms fly out for balance. Knees buckle slightly. Pain visible in body posture. White flash fades to purple.',
+      'HIT FRAME 3/3 — Recovery. Body struggles back to upright. Arms come back to guard. Still slightly dazed — stance not perfectly recovered yet. Foot at Y=180.',
+    ],
+    agresivo:[
+      'HIT FRAME 1/3 — IMPACT. Body absorbs hit with incredible toughness. Barely moves. Flash of white outlines body. Muscles tense on impact. Foot at Y=180.',
+      'HIT FRAME 2/3 — MINIMAL RECOIL. Body shifts only slightly backward. Still upright, still threatening. Shows the character\'s toughness. Red flash.',
+      'HIT FRAME 3/3 — Immediate recovery. Snaps back to aggressive stance almost instantly. Even angrier than before. Foot at Y=180.',
+    ],
+    campeon:[
+      'HIT FRAME 1/3 — IMPACT — SLIP. Head moves to the side (defensive slip). Body absorbs with technique. White flash. Still in guard. Foot at Y=180.',
+      'HIT FRAME 2/3 — Controlled stagger. Body shifts back 3px. Arms adjust guard. Technical response to the hit.',
+      'HIT FRAME 3/3 — Composed recovery. Back to perfect boxing guard. Minimal damage shown. Foot at Y=180.',
+    ],
+    clasico:[
+      'HIT FRAME 1/3 — IMPACT. Body and gi fly backward from force. White flash around body. Gi ripples dramatically. Foot at Y=180.',
+      'HIT FRAME 2/3 — RECOIL. Body at furthest point. Gi still rippling. Blue energy dissipated by the hit.',
+      'HIT FRAME 3/3 — Recovery. Gi settles. Returns to guard. Blue energy slowly returns to fists. Foot at Y=180.',
+    ]
+  },
+  special: {
+    label:'Special — Ataque Especial', frames: 4,
+    desc:'Carga de energía, lanzamiento, impacto máximo, recuperación.',
+    ninja:[
+      'SPECIAL FRAME 1/4 — CHARGE. Character crouches lower than normal. Both hands come together in front. Massive purple energy sphere building between palms. Purple lightning arcs around body. Intense glow. Foot at Y=180.',
+      'SPECIAL FRAME 2/4 — SPLIT. Body begins to divide. Original body and 2 ghost/clone silhouettes appear offset to the sides. Purple smoke streams from split points. Incredible energy release.',
+      'SPECIAL FRAME 3/4 — TRIPLE RUSH. Three purple silhouettes of character charge forward simultaneously with arms extended. Purple smoke trails. Speed lines on all three. Maximum energy output.',
+      'SPECIAL FRAME 4/4 — RECOVERY. Three clones collapse back into one. Character lands in stance. Purple energy dissipates in wisps. Slightly exhausted pose. Foot at Y=180.',
+    ],
+    agresivo:[
+      'SPECIAL FRAME 1/4 — IGNITION. Character crouches low. Red and orange flames begin erupting from feet and hands. Body temperature visibly rising. Intense red glow. Foot at Y=180.',
+      'SPECIAL FRAME 2/4 — FULL FLAME. Entire body engulfed in red/orange fire tornado. Cannot see body details through flames. Fire column effect. Ground scorching.',
+      'SPECIAL FRAME 3/4 — TORPEDO LAUNCH. Flaming body launches forward horizontally like a missile. Fire trail behind. Arms pointed forward. Devastating forward momentum.',
+      'SPECIAL FRAME 4/4 — IMPACT AND RECOVERY. Massive fire explosion at landing/impact point. Character emerges from fire cloud in aggressive stance. Embers falling. Foot at Y=180.',
+    ],
+    campeon:[
+      'SPECIAL FRAME 1/4 — CHARGE. Perfectly upright, rear fist pulls all the way back. Golden energy concentrates intensely on that fist. Entire body outlined in gold. Foot at Y=180.',
+      'SPECIAL FRAME 2/4 — GOLDEN EXPLOSION. Golden aura EXPLODES outward from entire body. Star burst effect. Maximum energy. Blinding golden light emanates.',
+      'SPECIAL FRAME 3/4 — POWER PUNCH. Fist drives forward with golden energy beam/ray launching from it. Pure golden light projectile. Perfect form on the punch.',
+      'SPECIAL FRAME 4/4 — VICTORY RECOVERY. Pose of confidence after attack. Golden energy rains down like sparkles. Returns to guard. Foot at Y=180.',
+    ],
+    clasico:[
+      'SPECIAL FRAME 1/4 — GATHER. Both hands pull together. Blue lightning crackles between them. Electricity arcs across entire body. Gi whips from energy. Foot at Y=180.',
+      'SPECIAL FRAME 2/4 — SURGE. Blue electric aura EXPLODES covering the entire body. Lightning bolts radiate outward. Gi is blown by energy wave.',
+      'SPECIAL FRAME 3/4 — THUNDER STRIKE. Body launches forward with electric trail. Punch or kick drives forward with blue lightning bolt. Maximum power.',
+      'SPECIAL FRAME 4/4 — GROUNDED. Lands powerfully. Electricity discharges into ground. Gi settles. Returns to guard. Foot at Y=180.',
+    ]
+  },
+  block: {
+    label:'Block — Defensa', frames: 2,
+    desc:'F1 brazos suben a cubrir, F2 postura de bloqueo sostenida.',
+    ninja:[
+      'BLOCK FRAME 1/2 — RAISE GUARD. Arms rise quickly to crossed position in front of body. Forearms forming X shield. Crouch deepens for stability. Purple energy shield forms in front of crossed arms. Foot at Y=180.',
+      'BLOCK FRAME 2/2 — HOLD GUARD. Sustained block position. Arms locked in cross. Purple translucent energy shield fully formed and visible. Eyes looking through guard. Ready to counter. Foot at Y=180.',
+    ],
+    agresivo:[
+      'BLOCK FRAME 1/2 — ARMS UP. Both forearms rise to guard position. Muscles flex massively on block. Body lowers for stability. Red glow around forearms. Foot at Y=180.',
+      'BLOCK FRAME 2/2 — IRON GUARD. Locked defensive position. Forearms like steel beams. Looks almost offensive even while defending. Red heat shimmer around arms. Foot at Y=180.',
+    ],
+    campeon:[
+      'BLOCK FRAME 1/2 — CLASSICAL GUARD. Arms rise into perfect high boxing guard. Gloves beside temples, elbows protecting body. Technical precision. Golden shimmer. Foot at Y=180.',
+      'BLOCK FRAME 2/2 — PERFECT DEFENSE. Classic peek-a-boo guard sustained. Textbook form. Can see eyes looking through gloves. Ready to slip and counter. Foot at Y=180.',
+    ],
+    clasico:[
+      'BLOCK FRAME 1/2 — DEFENSIVE CROSS. Arms rise in martial arts X-block. Gi sleeves compress as arms cross. Blue energy shield begins forming. Foot at Y=180.',
+      'BLOCK FRAME 2/2 — ENERGY SHIELD. Full X-block with blue translucent energy barrier in front. Stance solid and grounded. Gi settled. Foot at Y=180.',
+    ]
+  },
+  ko: {
+    label:'KO — Caída Derrotada', frames: 4,
+    desc:'F1 inicio caída, F2 a 45°, F3 impacto en el suelo, F4 tendido sin moverse.',
+    ninja:[
+      'KO FRAME 1/4 — BEGINNING TO FALL. Body starts tipping backward. Legs begin to buckle. Arms go limp. Purple energy completely faded. White oval head tips back. Foot still at Y=180.',
+      'KO FRAME 2/4 — 45° FALL. Body at 45° angle backward. Arms spread out loosely. Legs partially collapsed. Helpless descent.',
+      'KO FRAME 3/4 — GROUND IMPACT. Body hits the floor. Dust cloud at impact. Body bounces slightly. Full horizontal but not fully flat yet.',
+      'KO FRAME 4/4 — FINAL POSITION. Character completely flat on back on the ground. Arms spread wide. Legs flat. No movement. White oval head resting on floor. Fully defeated. Foot position shows character horizontal on ground.',
+    ],
+    agresivo:[
+      'KO FRAME 1/4 — REFUSES TO FALL. Body staggers, knees buckling. Still trying to stand. Fists still clenched. Pride in defeat. Foot at Y=180.',
+      'KO FRAME 2/4 — GOING DOWN. Body at 45° forward (falls face-first, too proud to fall back). Arms reach out.',
+      'KO FRAME 3/4 — FACE IMPACT. Hits ground face-first/chest-first. Massive dust cloud. Ground crack under the impact of the heavy body.',
+      'KO FRAME 4/4 — FACE DOWN. Completely flat face-down on ground. Fists still clenched even in defeat. Completely still. Smoke/dust settling.',
+    ],
+    campeon:[
+      'KO FRAME 1/4 — SLOW FALL BEGINS. Knees buckle with dignity. Body starts falling backward slowly. Guard lowers slowly. Foot at Y=180.',
+      'KO FRAME 2/4 — GRACEFUL DESCENT. Body at 45° back. Arms spread slightly. Dignified even in defeat.',
+      'KO FRAME 3/4 — LANDING. Back hits ground. Soft golden shimmer at impact. Body settles.',
+      'KO FRAME 4/4 — AT REST. Lying flat on back, one arm extended, one on chest. Eyes closed (white oval). Dignified defeated pose. Completely still.',
+    ],
+    clasico:[
+      'KO FRAME 1/4 — STUMBLE. Legs buckle. Gi flows with the fall motion. Blue energy completely gone. Arms go out for balance. Foot at Y=180.',
+      'KO FRAME 2/4 — FALL. Body at 45° backward. Gi fans out dramatically. Arms spread wide.',
+      'KO FRAME 3/4 — IMPACT. Hits ground. Gi splays around body. Dust/energy burst. Gi settles.',
+      'KO FRAME 4/4 — DOWN. Flat on back. Gi spread around body on ground. Arms at sides. White oval resting. Completely still.',
+    ]
+  }
+};
+
+const SUFFIX = `
+
+**MANDATORY HEAD RULE:**
+The head in this frame MUST be a perfectly smooth solid white oval/ellipse with a small gray + crosshair in the center. No face, no hair, no skin, no expression on the head area. Only a clean white oval. Non-negotiable.
+
+**MANDATORY BACKGROUND — CHROMA KEY GREEN:**
+The background MUST be a SOLID FLAT #00FF00 (pure neon green chroma key). NO gradients, NO textures, NO shadows on the floor, NO lighting effects on the background. Just perfectly flat #00FF00. Required for automatic background removal in the game engine.
+
+**MANDATORY ANCHOR:**
+Character's foot/feet at Y=180 (10px from bottom of 192px canvas).`
+
+const CHARS = ['ninja','agresivo','campeon','clasico'];
+const ANIM_KEYS = ['idle','walk','jump','jab','hook','kick','hit','special','block','ko'];
+
+let activeChar = 'ninja';
+let activeAnim = 'idle';
+
+function buildPrompt(char, anim, frameIdx) {
+  const b = BASE[char];
+  const a = ANIMS[anim];
+  const frameText = a[char][frameIdx];
+  return `Act as an expert pixel art animator for a 2D fighting game called "Amigo Fighter".
+Generate a SINGLE animation frame for the character "${b.label}".
+
+**TECHNICAL SPECS:**
+- Canvas: 128x192 pixels (high-res option: 256x384 — same proportion)
+- Background: SOLID FLAT #00FF00 chroma key green (NOT transparent, NOT gradient, just flat #00FF00)
+- Character faces RIGHT
+- Foot anchor: feet always at Y=180 (10px from bottom edge)
+- Style: pixel art, cel-shaded, hard crisp edges, NO anti-aliasing on character borders
+- No background elements, no floor shadows, no environment
+
+**CHARACTER:**
+${b.desc}
+Stance: ${b.stance}
+Colors: ${b.palette}
+Special FX: ${b.special_fx}
+
+**THIS SPECIFIC FRAME:**
+${frameText}${SUFFIX}`;
+}
+
+function renderContent() {
+  const a = ANIMS[activeAnim];
+  const b = BASE[activeChar];
+  const frames = Array.from({length: a.frames}, (_,i) => i);
+
+  document.getElementById('content').innerHTML = `
+    <div class="anim-section active">
+      <div class="section-header">
+        <h2 style="color:${b.color}">${a.label}</h2>
+        <p>${a.desc} — ${a.frames} frames para ${b.label}</p>
+      </div>
+      <div class="frames-grid">
+        ${frames.map(i => `
+          <div class="frame-card">
+            <div class="frame-header">
+              <div>
+                <div class="frame-num" style="color:${b.color}">Frame ${i+1} / ${a.frames}</div>
+                <div class="frame-name">${activeChar}_${activeAnim}_${i+1}.png</div>
+              </div>
+              <button class="copy-btn" onclick="copyPrompt('${activeChar}','${activeAnim}',${i})">Copiar</button>
+            </div>
+            <div class="frame-body">
+              <div class="prompt-text">${escHtml(buildPrompt(activeChar, activeAnim, i))}</div>
+            </div>
+          </div>
+        `).join('')}
+      </div>
+    </div>`;
+}
+
+function escHtml(t) {
+  return t.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+function copyPrompt(char, anim, frameIdx) {
+  const text = buildPrompt(char, anim, frameIdx);
+  navigator.clipboard.writeText(text).then(() => {
+    const toast = document.getElementById('toast');
+    toast.classList.add('show');
+    setTimeout(() => toast.classList.remove('show'), 2000);
+  });
+}
+
+function setChar(char) {
+  activeChar = char;
+  document.querySelectorAll('.char-tab').forEach(t => t.classList.toggle('active', t.dataset.char === char));
+  document.getElementById('mainLayout').dataset.activeChar = char;
+  renderContent();
+}
+
+function setAnim(anim) {
+  activeAnim = anim;
+  document.querySelectorAll('.anim-group').forEach(t => t.classList.toggle('active', t.dataset.anim === anim));
+  renderContent();
+}
+
+document.querySelectorAll('.char-tab').forEach(t => t.addEventListener('click', () => setChar(t.dataset.char)));
+document.querySelectorAll('.anim-group').forEach(t => t.addEventListener('click', () => setAnim(t.dataset.anim)));
+
+renderContent();
+</script>
+</body>
+</html>
