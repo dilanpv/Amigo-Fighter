@@ -322,14 +322,42 @@ io.on('connection', (socket) => {
 
     socket.on('player_in_ring', (data) => {
         const { roomId } = data;
-        const room = rooms.get(roomId);
-        if (room) {
-            const player = room.players.find(p => p.id === socket.id);
-            if (player) player.inRing = true;
-            
-            if (room.players.length === 2 && room.players.every(p => p.inRing)) {
-                io.to(roomId).emit('both_players_in_ring');
-            }
+        let room = rooms.get(roomId);
+        
+        // Fallback: create room if it doesn't exist (can happen in tournament race conditions)
+        if (!room) {
+            console.warn(`[player_in_ring] Room ${roomId} not found, creating it for ${socket.id}`);
+            room = { players: [] };
+            rooms.set(roomId, room);
+        }
+        
+        // Ensure socket is in the socket.io room
+        socket.join(roomId);
+        
+        let player = room.players.find(p => p.id === socket.id);
+        if (!player) {
+            // Player not found in room — add them (tournament edge case)
+            console.warn(`[player_in_ring] Player ${socket.id} not in room ${roomId}, adding`);
+            player = { id: socket.id, name: 'Jugador', side: room.players.length === 0 ? 'left' : 'right' };
+            room.players.push(player);
+        }
+        
+        player.inRing = true;
+        console.log(`[player_in_ring] ${socket.id} is in ring for ${roomId}. Players: ${room.players.map(p => p.id + ':' + (p.inRing ? 'READY' : 'waiting')).join(', ')}`);
+        
+        if (room.players.length >= 2 && room.players.every(p => p.inRing)) {
+            console.log(`[both_players_in_ring] Emitting for room ${roomId}`);
+            io.to(roomId).emit('both_players_in_ring');
+        } else if (room.players.length < 2) {
+            // Only 1 player in room — the other might not have done player_ready yet
+            // Re-check after a short delay
+            setTimeout(() => {
+                const r = rooms.get(roomId);
+                if (r && r.players.length >= 2 && r.players.every(p => p.inRing)) {
+                    console.log(`[both_players_in_ring] Delayed emit for room ${roomId}`);
+                    io.to(roomId).emit('both_players_in_ring');
+                }
+            }, 3000);
         }
     });
 
@@ -372,7 +400,7 @@ io.on('connection', (socket) => {
         if (room.players.length === 2 && allRequested) {
             // Reset room state for new match
             room.rematchRequests = new Set();
-            room.players.forEach(p => { p.ready = false; });
+            room.players.forEach(p => { p.ready = false; p.inRing = false; });
             io.to(roomId).emit('rematch_accepted');
             console.log(`Rematch accepted in room ${roomId}`);
         }

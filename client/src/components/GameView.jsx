@@ -6,6 +6,8 @@ import VirtualJoystick from './VirtualJoystick';
 import { socket } from '../socket';
 
 function GameView({ roomId, playerData, gameState, onEnd }) {
+  // Derive opponent from gameState for multiplayer
+  const opponent = gameState?.players?.find(p => p.id !== playerData?.id) || null;
   const containerRef = useRef(null);
   const gameRef = useRef(null);
   const soundRef = useRef(null); // N-4: SoundManager instance
@@ -38,10 +40,19 @@ function GameView({ roomId, playerData, gameState, onEnd }) {
 
   useEffect(() => {
     const handleBothReady = () => {
+        console.log('[GameView] both_players_in_ring received');
         setWaitingForOpponent(false);
         setShowTutorial(false);
         triggerRoundAnnounce();
-        if (gameRef.current) gameRef.current.events.emit('startMatch');
+        // Game might not be fully initialized yet — retry if needed
+        const tryStart = () => {
+            if (gameRef.current) {
+                gameRef.current.events.emit('startMatch');
+            } else {
+                setTimeout(tryStart, 200);
+            }
+        };
+        tryStart();
     };
     socket.on('both_players_in_ring', handleBothReady);
     return () => socket.off('both_players_in_ring', handleBothReady);
@@ -678,6 +689,17 @@ function GameView({ roomId, playerData, gameState, onEnd }) {
                         } else {
                             socket.emit('player_in_ring', { roomId });
                             setWaitingForOpponent(true);
+                            // Safety timeout: if server never responds, start anyway after 10s
+                            setTimeout(() => {
+                                setWaitingForOpponent(prev => {
+                                    if (prev) {
+                                        setShowTutorial(false);
+                                        triggerRoundAnnounce();
+                                        if (gameRef.current) gameRef.current.events.emit('startMatch');
+                                    }
+                                    return false;
+                                });
+                            }, 10000);
                         }
                       }}
                       className="px-12 py-4 bg-gradient-to-br from-red-700 to-red-900 border border-red-500 text-white text-3xl font-['Bebas_Neue'] tracking-[0.2em] hover:scale-105 active:scale-95 transition-all duration-300 shadow-[0_0_40px_rgba(255,0,0,0.5)] hover:shadow-[0_0_60px_rgba(255,0,0,0.8)]"
