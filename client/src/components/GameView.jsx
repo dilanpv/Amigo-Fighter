@@ -6,8 +6,6 @@ import VirtualJoystick from './VirtualJoystick';
 import { socket } from '../socket';
 
 function GameView({ roomId, playerData, gameState, onEnd }) {
-  // Derive opponent from gameState for multiplayer
-  const opponent = gameState?.players?.find(p => p.id !== playerData?.id) || null;
   const containerRef = useRef(null);
   const gameRef = useRef(null);
   const soundRef = useRef(null); // N-4: SoundManager instance

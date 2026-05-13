@@ -400,7 +400,7 @@ io.on('connection', (socket) => {
         if (room.players.length === 2 && allRequested) {
             // Reset room state for new match
             room.rematchRequests = new Set();
-            room.players.forEach(p => { p.ready = false; p.inRing = false; });
+            room.players.forEach(p => { p.ready = false; });
             io.to(roomId).emit('rematch_accepted');
             console.log(`Rematch accepted in room ${roomId}`);
         }
