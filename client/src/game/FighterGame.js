@@ -88,6 +88,15 @@ export default class FighterGame extends Phaser.Scene {
             this.game.events.emit('cpuHpUpdate', data);
         });
 
+        this.mobileKeys = {};
+        this.game.events.on('mobileInput', (data) => {
+            const wasDown = this.mobileKeys[data.keyCode];
+            this.mobileKeys[data.keyCode] = data.isDown;
+            if (data.isDown && !wasDown) {
+                this.mobileKeys[`${data.keyCode}_justDown`] = true;
+            }
+        });
+
         this.game.events.once('startMatch', () => {
             this.matchStarted = true;
             this.resetPositions();
@@ -561,25 +570,31 @@ export default class FighterGame extends Phaser.Scene {
         let moved = false;
         let anim = 'idle';
 
-        if (Phaser.Input.Keyboard.JustDown(this.attackKeys.A)) this.executeAttack(local, 'jab');
-        else if (Phaser.Input.Keyboard.JustDown(this.attackKeys.S)) this.executeAttack(local, 'hook');
-        else if (Phaser.Input.Keyboard.JustDown(this.attackKeys.D)) this.executeAttack(local, 'kick');
-        else if (Phaser.Input.Keyboard.JustDown(this.attackKeys.W)) this.executeAttack(local, 'special');
+        // Check attacks
+        if (Phaser.Input.Keyboard.JustDown(this.attackKeys.A) || this.mobileKeys['65_justDown']) { this.executeAttack(local, 'jab'); this.mobileKeys['65_justDown'] = false; }
+        else if (Phaser.Input.Keyboard.JustDown(this.attackKeys.S) || this.mobileKeys['83_justDown']) { this.executeAttack(local, 'hook'); this.mobileKeys['83_justDown'] = false; }
+        else if (Phaser.Input.Keyboard.JustDown(this.attackKeys.D) || this.mobileKeys['68_justDown']) { this.executeAttack(local, 'kick'); this.mobileKeys['68_justDown'] = false; }
+        else if (Phaser.Input.Keyboard.JustDown(this.attackKeys.W) || this.mobileKeys['87_justDown']) { this.executeAttack(local, 'special'); this.mobileKeys['87_justDown'] = false; }
 
         const styleSpeedMult = local.spec.style === 'Velocista' ? 1.5 : local.spec.style === 'Agresivo' ? 1.1 : local.spec.style === 'Defensivo' ? 0.85 : 1.0;
         const baseSpeed = 160 + (this.stats.spd * 20);
 
-        if (this.cursors.down.isDown && onGround) {
+        const isDownPressed = this.cursors.down.isDown || this.mobileKeys['40'];
+        const isLeftPressed = this.cursors.left.isDown || this.mobileKeys['37'];
+        const isRightPressed = this.cursors.right.isDown || this.mobileKeys['39'];
+        const isUpPressed = this.cursors.up.isDown || this.mobileKeys['38'];
+
+        if (isDownPressed && onGround) {
             local.sprite.setVelocityX(0);
             local.state = 'blocking';
             anim = 'block';
             moved = true;
-        } else if (this.cursors.left.isDown) {
+        } else if (isLeftPressed) {
             local.sprite.setVelocityX(-(baseSpeed * styleSpeedMult));
             local.sprite.setFlipX(true);
             anim = onGround ? 'walk_fwd' : 'jump';
             moved = true;
-        } else if (this.cursors.right.isDown) {
+        } else if (isRightPressed) {
             local.sprite.setVelocityX(baseSpeed * styleSpeedMult);
             local.sprite.setFlipX(false);
             anim = onGround ? 'walk_fwd' : 'jump';
@@ -594,7 +609,7 @@ export default class FighterGame extends Phaser.Scene {
             if (this.sound_mgr) this.sound_mgr.sfxLand?.();
         }
 
-        if (this.cursors.up.isDown && onGround) {
+        if (isUpPressed && onGround) {
             local.sprite.setVelocityY(-550);
             anim = 'jump';
             moved = true;

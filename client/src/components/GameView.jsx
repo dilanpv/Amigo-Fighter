@@ -153,6 +153,9 @@ function GameView({ roomId, playerData, gameState, onEnd }) {
 
   const triggerKey = (keyCode, isDown) => {
     window.dispatchEvent(new KeyboardEvent(isDown ? 'keydown' : 'keyup', { keyCode }));
+    if (gameRef.current) {
+      gameRef.current.events.emit('mobileInput', { keyCode, isDown });
+    }
   };
 
   const joystickState = useRef({ up: false, down: false, left: false, right: false });
@@ -508,7 +511,13 @@ function GameView({ roomId, playerData, gameState, onEnd }) {
       {/* TUTORIAL */}
       {showTutorial && (
         <div className="absolute inset-0 z-[110] bg-black/90 flex flex-col items-center justify-center backdrop-blur-md p-4">
-          <div className="w-full max-w-4xl bg-neutral-950/80 border-t-4 border-b-4 border-red-600 p-6 md:p-10 shadow-[0_0_60px_rgba(255,0,0,0.25)] relative overflow-hidden">
+          <button 
+            onClick={() => onEnd(null)} 
+            className="absolute top-4 left-4 md:top-8 md:left-8 px-4 py-2 bg-neutral-800 hover:bg-neutral-700 text-white font-['Bebas_Neue'] text-xl md:text-2xl tracking-widest border border-neutral-600 rounded transition-colors z-[120] shadow-md"
+          >
+            ← VOLVER
+          </button>
+          <div className="w-full max-w-4xl bg-neutral-950/80 border-t-4 border-b-4 border-red-600 p-6 md:p-10 shadow-[0_0_60px_rgba(255,0,0,0.25)] relative overflow-hidden mt-12 md:mt-0">
             <h2 className="font-['Bebas_Neue'] text-5xl md:text-8xl text-white mb-2 md:mb-4 tracking-widest text-center">CONTROLES <span className="text-red-500">DE COMBATE</span></h2>
             <div className="w-full grid grid-cols-1 md:grid-cols-2 gap-8 md:gap-12 mt-6 md:mt-10">
               <div className="flex flex-col items-center">

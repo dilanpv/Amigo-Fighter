@@ -243,8 +243,21 @@ function App() {
         />
       )}
       {screen === 'loading' && (
-        <div className="screen min-h-screen flex flex-col items-center justify-center p-4">
-          <div className="text-center w-full max-w-lg">
+        <div className="screen min-h-screen flex flex-col items-center justify-center p-4 relative">
+          <button 
+            onClick={() => {
+              if (roomId && typeof roomId === 'string' && roomId.startsWith('T-')) {
+                  setScreen('bracket');
+              } else {
+                  if (roomId) socket.emit('leave_match', { roomId });
+                  setScreen('lobby');
+              }
+            }} 
+            className="absolute top-4 left-4 md:top-8 md:left-8 px-4 py-2 bg-neutral-800 hover:bg-neutral-700 text-white font-['Bebas_Neue'] text-xl md:text-2xl tracking-widest border border-neutral-600 rounded transition-colors z-[120] shadow-md"
+          >
+            ← VOLVER
+          </button>
+          <div className="text-center w-full max-w-lg mt-12 md:mt-0">
             <h1 className="text-3xl md:text-6xl text-red-500 font-['Bebas_Neue'] tracking-widest mb-4 md:mb-6 drop-shadow-[0_0_30px_rgba(255,60,60,0.8)]">
               AMIGO FIGHTER
             </h1>
