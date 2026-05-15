@@ -1,5 +1,4 @@
 import * as Phaser from 'phaser';
-import SoundManager from './SoundManager';
 
 export default class FighterGame extends Phaser.Scene {
     constructor() {
@@ -14,12 +13,10 @@ export default class FighterGame extends Phaser.Scene {
         this.players = {};
         this.hp = { p1: 100, p2: 100 };
         this.gameOver = false;
-        this.matchStarted = false; // V-16: Wait for tutorial button to start logic
-        this.cpuDifficulty = data.cpuDifficulty || 'normal'; // H-3
-        this.sound_mgr = data.soundManager || null; // N-4: shared SoundManager instance
-        
-        // Character specs & Stats
-        this.charSpec = this.playerData.character || { 
+        this.matchStarted = false;
+        this.cpuDifficulty = data.cpuDifficulty || 'normal';
+        this.sound_mgr = data.soundManager || null;
+        this.charSpec = this.playerData.character || {
             fWidth: 128, fHeight: 192, img: '/assets/LUCHADOR.png', cols: 11,
             stats: { str: 3, spd: 3, res: 3 }, style: 'Balanceado'
         };
@@ -27,29 +24,21 @@ export default class FighterGame extends Phaser.Scene {
     }
 
     preload() {
-        // Removed cache buster as it can cause issues on some mobile browsers
-        // const cb = ''; 
-        
         this.gameState.players.forEach(p => {
             const spec = p.character || this.charSpec;
             this.load.spritesheet(`fighter_${p.id}`, encodeURI(spec.img || '/assets/LUCHADOR.png'), {
                 frameWidth: spec.fWidth || 128,
                 frameHeight: spec.fHeight || 192
             });
+            if (p.face) this.load.image(`face_${p.id}`, p.face);
+        });
 
-            if (p.face) {
-                this.load.image(`face_${p.id}`, p.face);
-            }
-        });
-        
-        // Carga el personaje aleatorio para la CPU
         const cpuSpec = this.gameState.cpuCharacter || { img: '/assets/EL_AGRESIVO.png', fWidth: 128, fHeight: 192 };
-        this.load.spritesheet('fighter_CPU', encodeURI(cpuSpec.img), { 
-            frameWidth: cpuSpec.fWidth || 128, 
-            frameHeight: cpuSpec.fHeight || 192 
+        this.load.spritesheet('fighter_CPU', encodeURI(cpuSpec.img), {
+            frameWidth: cpuSpec.fWidth || 128,
+            frameHeight: cpuSpec.fHeight || 192
         });
-        
-        // Escenarios aleatorios
+
         this.stages = [
             "Gemini_Generated_Image_18znjw18znjw18zn.png",
             "Gemini_Generated_Image_291wo1291wo1291w.png",
@@ -68,15 +57,11 @@ export default class FighterGame extends Phaser.Scene {
         this.selectedStage = this.stages[seed % this.stages.length];
         this.load.image('bg_stage', encodeURI(`/assets/Escenarios/${this.selectedStage}`));
 
-        // Error logging for mobile debugging
-        this.load.on('loaderror', (file) => {
-            console.error('Error loading asset:', file.src, file.key);
-        });
+        this.load.on('loaderror', (file) => console.error('Asset error:', file.src, file.key));
     }
 
     create() {
-        this.physics.world.setBounds(0, -500, 800, 1000); // Mover el límite superior para que no golpeen una "pared invisible" al saltar
-        
+        this.physics.world.setBounds(0, -500, 800, 1000);
         this.setupArena();
         this.setupAnimations();
         this.spawnPlayers();
@@ -84,13 +69,11 @@ export default class FighterGame extends Phaser.Scene {
         this.setupInputs();
         this.setupSocketListeners();
 
-        // N-4: Start BGM when combat begins
         if (this.sound_mgr) {
             this.sound_mgr.startBGM();
-            this.sound_mgr.sfxVoFight(); // "¡FIGHT!" voice SFX
+            this.sound_mgr.sfxVoFight?.();
         }
 
-        // Escuchar evento de reinicio de ronda desde la UI (via game.events, no scene.events)
         this.game.events.on('resetRound', this.resetPositions, this);
         this.game.events.on('gameOver', this.handleGameOver, this);
         this.game.events.on('triggerEmote', (emote) => {
@@ -98,10 +81,16 @@ export default class FighterGame extends Phaser.Scene {
             this.socket.emit('player_emote', { roomId: this.roomId, emote });
         });
 
-        // V-16: Listen for "Entrar al ring" signal from UI
+        // ✅ updateHP solo para modo CPU
+        this.game.events.on('updateHP', (data) => {
+            if (this.gameState.players.length > 1) return;
+            // En CPU mode, propagar a GameView para que actualice el estado
+            this.game.events.emit('cpuHpUpdate', data);
+        });
+
         this.game.events.once('startMatch', () => {
             this.matchStarted = true;
-            this.resetPositions(); // Trigger first "FIGHT!" and position reset
+            this.resetPositions();
         });
     }
 
@@ -109,26 +98,19 @@ export default class FighterGame extends Phaser.Scene {
         if (this.textures.exists('bg_stage')) {
             const bg = this.add.image(400, 225, 'bg_stage');
             bg.setDisplaySize(800, 450);
-            
-            // Mantener texturas de partículas en memoria
-            const g = this.make.graphics({x:0, y:0, add:false});
-            g.fillStyle(0xffffff, 1);
-            g.fillCircle(4, 4, 4);
+            const g = this.make.graphics({ x: 0, y: 0, add: false });
+            g.fillStyle(0xffffff, 1); g.fillCircle(4, 4, 4);
             g.generateTexture('particle_star', 8, 8);
-            
-            const dg = this.make.graphics({x:0, y:0, add:false});
-            dg.fillStyle(0xdcdcdc, 0.6);
-            dg.fillCircle(3, 3, 3);
+            const dg = this.make.graphics({ x: 0, y: 0, add: false });
+            dg.fillStyle(0xdcdcdc, 0.6); dg.fillCircle(3, 3, 3);
             dg.generateTexture('particle_dust', 6, 6);
             return;
         }
 
-        // === FONDO DEGRADADO (cielo de estadio oscuro) ===
         const bg = this.add.graphics();
         bg.fillGradientStyle(0x06060f, 0x06060f, 0x12122a, 0x12122a, 1);
         bg.fillRect(0, 0, 800, 450);
 
-        // === SILUETA DE MULTITUD ===
         const crowd = this.add.graphics();
         crowd.fillStyle(0x111120, 1);
         for (let x = 0; x < 800; x += 18) {
@@ -136,33 +118,22 @@ export default class FighterGame extends Phaser.Scene {
             crowd.fillRect(x, 290 - h, 14, h);
         }
 
-        // === CONOS DE LUZ (spotlights) ===
         const lights = this.add.graphics();
         [120, 300, 500, 680].forEach(sx => {
             lights.fillStyle(0xffeedd, 0.04);
             lights.fillTriangle(sx, 0, sx - 60, 320, sx + 60, 320);
         });
 
-        // === GLOW DEL SUELO DEL RING ===
         const ringGlow = this.add.graphics();
         ringGlow.fillStyle(0xff2222, 0.07);
         ringGlow.fillEllipse(400, 390, 700, 50);
-        this.tweens.add({
-            targets: ringGlow,
-            alpha: { from: 0.6, to: 1 },
-            duration: 1800,
-            yoyo: true,
-            repeat: -1,
-            ease: 'Sine.easeInOut'
-        });
+        this.tweens.add({ targets: ringGlow, alpha: { from: 0.6, to: 1 }, duration: 1800, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
 
-        // === SUELO DEL RING ===
         const floor = this.add.graphics();
         floor.fillGradientStyle(0x1a1a2e, 0x1a1a2e, 0x0d0d18, 0x0d0d18, 1);
-        floor.fillRect(0, 410, 800, 40); // Bajado significativamente según la línea roja
+        floor.fillRect(0, 410, 800, 40);
         this.add.rectangle(400, 412, 800, 2, 0xffffff, 0.08);
 
-        // === POSTES DEL RING ===
         const postG = this.add.graphics();
         postG.fillGradientStyle(0x555555, 0x333333, 0x222222, 0x444444, 1);
         postG.fillRect(42, 190, 16, 175);
@@ -171,7 +142,6 @@ export default class FighterGame extends Phaser.Scene {
         this.add.circle(50, 190, 10, 0x888888);
         this.add.circle(750, 190, 10, 0x888888);
 
-        // === CUERDAS DEL RING ===
         [220, 258, 296].forEach((ry, i) => {
             const shade = Math.floor(0xcc - i * 0x22);
             this.add.rectangle(400, ry + 2, 700, 3, 0x000000, 0.4);
@@ -179,37 +149,25 @@ export default class FighterGame extends Phaser.Scene {
             this.add.rectangle(400, ry - 1, 700, 1, 0xff6666, 0.3);
         });
 
-        // === FOCOS DEL ESTADIO ===
         const lampG = this.add.graphics();
         [80, 260, 400, 540, 720].forEach((lx, idx) => {
             const ly = 18 + (idx % 2) * 12;
-            lampG.fillStyle(0xffffff, 0.9);
-            lampG.fillCircle(lx, ly, 5);
-            lampG.fillStyle(0xffffee, 0.05);
-            lampG.fillCircle(lx, ly, 22);
+            lampG.fillStyle(0xffffff, 0.9); lampG.fillCircle(lx, ly, 5);
+            lampG.fillStyle(0xffffee, 0.05); lampG.fillCircle(lx, ly, 22);
         });
 
-        // === Texturas de partículas en memoria ===
-        const g = this.make.graphics({x:0, y:0, add:false});
-        g.fillStyle(0xffffff, 1);
-        g.fillCircle(4, 4, 4);
+        const g = this.make.graphics({ x: 0, y: 0, add: false });
+        g.fillStyle(0xffffff, 1); g.fillCircle(4, 4, 4);
         g.generateTexture('particle_star', 8, 8);
-        
-        const dg = this.make.graphics({x:0, y:0, add:false});
-        dg.fillStyle(0xdcdcdc, 0.6);
-        dg.fillCircle(3, 3, 3);
+        const dg = this.make.graphics({ x: 0, y: 0, add: false });
+        dg.fillStyle(0xdcdcdc, 0.6); dg.fillCircle(3, 3, 3);
         dg.generateTexture('particle_dust', 6, 6);
     }
 
-
     emitDust(x, y) {
         const emitter = this.add.particles(x, y, 'particle_dust', {
-            speedX: { min: -100, max: 100 },
-            speedY: { min: -60, max: 0 },
-            scale: { start: 1.2, end: 0 },
-            lifespan: 400,
-            quantity: 10,
-            emitting: false
+            speedX: { min: -100, max: 100 }, speedY: { min: -60, max: 0 },
+            scale: { start: 1.2, end: 0 }, lifespan: 400, quantity: 10, emitting: false
         });
         emitter.explode();
         this.time.delayedCall(450, () => emitter.destroy());
@@ -218,29 +176,28 @@ export default class FighterGame extends Phaser.Scene {
     setupAnimations() {
         const CHARACTER_FRAMES = {
             'DEFAULT': [
-                { key: 'idle',     start: 0,  end: 3,  rate: 8,  repeat: -1 },
-                { key: 'walk_fwd', start: 4,  end: 9,  rate: 10, repeat: -1 },
-                { key: 'jump',     start: 10, end: 12, rate: 8,  repeat: 0  },
-                { key: 'jab',      start: 13, end: 16, rate: 15, repeat: 0  },
-                { key: 'hook',     start: 17, end: 20, rate: 12, repeat: 0  },
-                { key: 'kick',     start: 21, end: 24, rate: 12, repeat: 0  },
-                { key: 'hit',      start: 25, end: 27, rate: 10, repeat: 0  },
-                { key: 'special',  start: 28, end: 31, rate: 9,  repeat: 0  },
-                { key: 'block',    start: 32, end: 33, rate: 6,  repeat: 0  },
-                { key: 'ko',       start: 34, end: 37, rate: 6,  repeat: 0  },
+                { key: 'idle', start: 0, end: 3, rate: 8, repeat: -1 },
+                { key: 'walk_fwd', start: 4, end: 9, rate: 10, repeat: -1 },
+                { key: 'jump', start: 10, end: 12, rate: 8, repeat: 0 },
+                { key: 'jab', start: 13, end: 16, rate: 15, repeat: 0 },
+                { key: 'hook', start: 17, end: 20, rate: 12, repeat: 0 },
+                { key: 'kick', start: 21, end: 24, rate: 12, repeat: 0 },
+                { key: 'hit', start: 25, end: 27, rate: 10, repeat: 0 },
+                { key: 'special', start: 28, end: 31, rate: 9, repeat: 0 },
+                { key: 'block', start: 32, end: 33, rate: 6, repeat: 0 },
+                { key: 'ko', start: 34, end: 37, rate: 6, repeat: 0 },
             ],
-            // Ninja: frame 37 was AI-generated incorrectly (standing instead of lying down)
             'ninja': [
-                { key: 'idle',     start: 0,  end: 3,  rate: 8,  repeat: -1 },
-                { key: 'walk_fwd', start: 4,  end: 9,  rate: 10, repeat: -1 },
-                { key: 'jump',     start: 10, end: 12, rate: 8,  repeat: 0  },
-                { key: 'jab',      start: 13, end: 16, rate: 15, repeat: 0  },
-                { key: 'hook',     start: 17, end: 20, rate: 12, repeat: 0  },
-                { key: 'kick',     start: 21, end: 24, rate: 12, repeat: 0  },
-                { key: 'hit',      start: 25, end: 27, rate: 10, repeat: 0  },
-                { key: 'special',  start: 28, end: 31, rate: 9,  repeat: 0  },
-                { key: 'block',    start: 32, end: 33, rate: 6,  repeat: 0  },
-                { key: 'ko',       start: 34, end: 36, rate: 6,  repeat: 0  },
+                { key: 'idle', start: 0, end: 3, rate: 8, repeat: -1 },
+                { key: 'walk_fwd', start: 4, end: 9, rate: 10, repeat: -1 },
+                { key: 'jump', start: 10, end: 12, rate: 8, repeat: 0 },
+                { key: 'jab', start: 13, end: 16, rate: 15, repeat: 0 },
+                { key: 'hook', start: 17, end: 20, rate: 12, repeat: 0 },
+                { key: 'kick', start: 21, end: 24, rate: 12, repeat: 0 },
+                { key: 'hit', start: 25, end: 27, rate: 10, repeat: 0 },
+                { key: 'special', start: 28, end: 31, rate: 9, repeat: 0 },
+                { key: 'block', start: 32, end: 33, rate: 6, repeat: 0 },
+                { key: 'ko', start: 34, end: 36, rate: 6, repeat: 0 },
             ]
         };
 
@@ -248,20 +205,17 @@ export default class FighterGame extends Phaser.Scene {
             const textureKey = `fighter_${playerId}`;
             if (!this.textures.exists(textureKey)) return;
             const totalFrames = this.textures.get(textureKey).frameTotal;
-            const maxIdx = Math.max(0, totalFrames - 2); 
+            const maxIdx = Math.max(0, totalFrames - 2);
             const safeF = (idx) => Math.min(idx, maxIdx);
-
-            // Look up character-specific frame mapping
             const anims = CHARACTER_FRAMES[characterId] || CHARACTER_FRAMES['DEFAULT'];
-            
             anims.forEach(a => {
                 const fullKey = `${a.key}_${playerId}`;
                 if (!this.anims.exists(fullKey)) {
                     this.anims.create({
                         key: fullKey,
-                        frames: this.anims.generateFrameNumbers(textureKey, { 
-                            start: safeF(a.start), 
-                            end: Math.max(safeF(a.start), safeF(a.end)) 
+                        frames: this.anims.generateFrameNumbers(textureKey, {
+                            start: safeF(a.start),
+                            end: Math.max(safeF(a.start), safeF(a.end))
                         }),
                         frameRate: a.rate,
                         repeat: a.repeat
@@ -270,56 +224,42 @@ export default class FighterGame extends Phaser.Scene {
             });
         };
 
-        this.gameState.players.forEach(p => {
-            const charId = p.character?.id || 'luchador';
-            createAnimFor(p.id, charId);
-        });
-        // CPU uses its assigned character
-        const cpuCharId = this.gameState.cpuCharacter?.id || 'agresivo';
-        createAnimFor('CPU', cpuCharId);
+        this.gameState.players.forEach(p => createAnimFor(p.id, p.character?.id || 'luchador'));
+        createAnimFor('CPU', this.gameState.cpuCharacter?.id || 'agresivo');
     }
 
     spawnPlayers() {
         const isSinglePlayer = this.gameState.players.length === 1;
-        
         const getHeadOffset = (spec) => {
             const topPct = spec?.headPos ? parseFloat(spec.headPos.top) / 100 : 0.20;
             const h = spec?.fHeight || 192;
-            return (-h / 2) + (h * topPct) - 45; // Move face 45px higher
+            return (-h / 2) + (h * topPct) - 45;
         };
-        
-        // Spawn Local Player
+
         const p = this.gameState.players.find(pl => pl.id === this.playerData.id) || this.gameState.players[0];
         const side = this.playerData.side || 'left';
         const x = side === 'left' ? 180 : 620;
-        
+
         const localFighter = {
             id: p.id,
             sprite: this.physics.add.sprite(x, 314, `fighter_${p.id}`),
-            startX: x,
-            startY: 314,
-            startFlipX: side === 'right',
-            isLocal: true,
-            state: 'idle',
-            hasHit: false,
-            spec: p.character || this.charSpec
+            startX: x, startY: 314, startFlipX: side === 'right',
+            isLocal: true, state: 'idle', hasHit: false,
+            spec: p.character || this.charSpec,
+            side
         };
         localFighter.sprite.setCollideWorldBounds(true);
         localFighter.sprite.setFlipX(side === 'right');
-        localFighter.sprite.setDepth(10); // Ensure characters are above background
+        localFighter.sprite.setDepth(10);
 
-        // Avatar del jugador: se muestra SOBRE la cabeza del sprite
         if (this.textures.exists(`face_${p.id}`)) {
             const faceYOffset = getHeadOffset(localFighter.spec);
-            
-            // Avatar circular sobre la cabeza, tamaño visible
             localFighter.face = this.add.image(x, 314 + faceYOffset, `face_${p.id}`);
             localFighter.face.setDisplaySize(52, 52);
             localFighter.face.setDepth(12);
         }
         this.players[p.id] = localFighter;
 
-        // Spawn Opponent
         if (!isSinglePlayer) {
             const oppData = this.gameState.players.find(pl => pl.id !== p.id);
             const oppSide = side === 'left' ? 'right' : 'left';
@@ -327,76 +267,54 @@ export default class FighterGame extends Phaser.Scene {
             const oppFighter = {
                 id: oppData.id,
                 sprite: this.physics.add.sprite(oppX, 314, `fighter_${oppData.id}`),
-                startX: oppX,
-                startY: 314,
-                startFlipX: oppSide === 'right',
-                isLocal: false,
-                state: 'idle',
-                hasHit: false,
-                spec: oppData.character || this.charSpec
+                startX: oppX, startY: 314, startFlipX: oppSide === 'right',
+                isLocal: false, state: 'idle', hasHit: false,
+                spec: oppData.character || this.charSpec,
+                side: oppSide
             };
             oppFighter.sprite.setCollideWorldBounds(true);
             oppFighter.sprite.setFlipX(oppSide === 'right');
             oppFighter.sprite.setDepth(10);
-            
-            // Avatar del oponente: sobre la cabeza
+
             if (this.textures.exists(`face_${oppData.id}`)) {
                 const faceYOffset = getHeadOffset(oppFighter.spec);
-                
                 oppFighter.face = this.add.image(oppX, 314 + faceYOffset, `face_${oppData.id}`);
                 oppFighter.face.setDisplaySize(52, 52);
                 oppFighter.face.setDepth(12);
             }
             this.players[oppData.id] = oppFighter;
         } else {
-            // CPU
             const oppSide = side === 'left' ? 'right' : 'left';
             const oppX = oppSide === 'left' ? 180 : 620;
             const cpu = {
                 id: 'CPU',
                 sprite: this.physics.add.sprite(oppX, 314, 'fighter_CPU'),
-                startX: oppX,
-                startY: 314,
-                startFlipX: oppSide === 'right',
-                isLocal: false,
-                isCPU: true,
-                state: 'idle',
-                hasHit: false,
+                startX: oppX, startY: 314, startFlipX: oppSide === 'right',
+                isLocal: false, isCPU: true, state: 'idle', hasHit: false,
                 spec: this.gameState.cpuCharacter || { stats: { str: 2, spd: 2, res: 2 }, headPos: { top: '15%', left: '48%' }, fHeight: 192 },
-                cpuTimer: 90
+                cpuTimer: 90,
+                side: oppSide
             };
             cpu.sprite.setCollideWorldBounds(true);
             cpu.sprite.setFlipX(oppSide === 'right');
             cpu.sprite.setDepth(10);
-            cpu.sprite.setTint(0xffaaaa); // Ligero tinte agresivo
-            
-            // CPU no tiene avatar
+            cpu.sprite.setTint(0xffaaaa);
             cpu.face = null;
-            
             this.players['CPU'] = cpu;
         }
     }
 
     setupPhysics() {
-        // Suelo físico alineado con el visual bajo (410)
         const ground = this.add.rectangle(400, 420, 800, 20, 0x000, 0);
         this.physics.add.existing(ground, true);
-        
         const sprites = [];
         Object.values(this.players).forEach(p => {
             this.physics.add.collider(p.sprite, ground);
-            
-            // Ajustar el body de colisión para que puedan acercarse pero no superponerse
             p.sprite.body.setSize(70, 180);
             p.sprite.body.setOffset(29, 12);
-            
             sprites.push(p.sprite);
         });
-
-        // Colisión entre jugadores para evitar que se superpongan
-        if (sprites.length >= 2) {
-            this.physics.add.collider(sprites[0], sprites[1]);
-        }
+        if (sprites.length >= 2) this.physics.add.collider(sprites[0], sprites[1]);
     }
 
     setupInputs() {
@@ -405,14 +323,13 @@ export default class FighterGame extends Phaser.Scene {
     }
 
     setupSocketListeners() {
-        // Store references so we can remove them in shutdown()
         this._onOpponentMove = (data) => {
             const opp = this.players[data.id];
             if (opp && opp.state !== 'attacking' && opp.state !== 'falling' && opp.state !== 'ko') {
                 if (opp.moveTween) opp.moveTween.stop();
                 opp.targetX = data.x;
                 opp.targetY = data.y;
-                opp.lastNetUpdate = this.time.now; // Track when we received the update
+                opp.lastNetUpdate = this.time.now;
                 opp.sprite.play(`${data.anim}_${opp.id}`, true);
                 opp.sprite.setFlipX(data.flip);
             }
@@ -423,97 +340,84 @@ export default class FighterGame extends Phaser.Scene {
             if (opp) {
                 opp.state = 'attacking';
                 opp.sprite.play(`${data.type}_${opp.id}`, true);
-                
-                // Fallback timeout to prevent getting stuck in attacking state
                 if (opp.attackTimer) this.time.removeEvent(opp.attackTimer);
                 opp.attackTimer = this.time.delayedCall(600, () => {
                     if (opp.state === 'attacking') opp.state = 'idle';
                 });
-
                 opp.sprite.once('animationcomplete', () => {
                     if (opp.state === 'attacking') opp.state = 'idle';
                 });
             }
         };
 
-        // C-1: Use finalDamage (pre-calculated by attacker) to prevent HP divergence
+        // ✅ FIX: opponent_hit solo hace efectos visuales — el HP viene de hp_update del servidor
         this._onOpponentHit = (data) => {
-            this.handleHit(data.targetId, data.finalDamage ?? data.damage, data.attackerX, data.isCombo, true);
+            this.handleHitVisuals(data.targetId, data.finalDamage ?? data.damage, data.attackerX, data.isCombo);
+        };
+
+        // ✅ FIX: server_ko — el servidor dicta quién cae
+        this._onServerKO = (data) => {
+            this.handleGameOver({ loserId: data.loserId });
         };
 
         this._onOpponentEmote = (data) => {
             this.showEmote(data.id, data.emote);
         };
 
-        this.socket.on('opponent_move',   this._onOpponentMove);
+        this.socket.on('opponent_move', this._onOpponentMove);
         this.socket.on('opponent_attack', this._onOpponentAttack);
-        this.socket.on('opponent_hit',    this._onOpponentHit);
-        this.socket.on('opponent_emote',  this._onOpponentEmote);
+        this.socket.on('opponent_hit', this._onOpponentHit);
+        this.socket.on('server_ko', this._onServerKO);
+        this.socket.on('opponent_emote', this._onOpponentEmote);
     }
 
-    // ✅ Phaser calls shutdown() automatically when the scene is destroyed
     shutdown() {
         if (this.socket) {
-            this.socket.off('opponent_move',   this._onOpponentMove);
+            this.socket.off('opponent_move', this._onOpponentMove);
             this.socket.off('opponent_attack', this._onOpponentAttack);
-            this.socket.off('opponent_hit',    this._onOpponentHit);
-            this.socket.off('opponent_emote',  this._onOpponentEmote);
+            this.socket.off('opponent_hit', this._onOpponentHit);
+            this.socket.off('server_ko', this._onServerKO);
+            this.socket.off('opponent_emote', this._onOpponentEmote);
         }
         if (this.game) {
             this.game.events.off('resetRound', this.resetPositions, this);
-            this.game.events.off('gameOver',   this.handleGameOver,  this);
+            this.game.events.off('gameOver', this.handleGameOver, this);
         }
-        // N-4: Stop BGM when scene is destroyed
-        if (this.sound_mgr) this.sound_mgr.stopBGM();
-        // Cancel any pending timers on players
+        if (this.sound_mgr) this.sound_mgr.stopBGM?.();
         Object.values(this.players || {}).forEach(p => {
             if (p.attackTimer) this.time.removeEvent(p.attackTimer);
-            if (p.moveTween)   p.moveTween.stop();
+            if (p.moveTween) p.moveTween.stop();
         });
     }
 
     resetPositions() {
         this.gameOver = false;
         Object.values(this.players).forEach(p => {
-            p.state = 'idle';
-            p.hasHit = false;
+            p.state = 'idle'; p.hasHit = false;
             p.sprite.clearTint();
             p.sprite.setVelocity(0, 0);
-            p.sprite.x = p.startX;
-            p.sprite.y = p.startY;
+            p.sprite.x = p.startX; p.sprite.y = p.startY;
             p.sprite.setFlipX(p.startFlipX);
             p.sprite.play(`idle_${p.id}`, true);
-            if (p.isCPU) {
-                p.cpuTimer = 90; // Wait 1.5s before attacking
-            }
+            if (p.isCPU) p.cpuTimer = 90;
         });
         this.syncGraphics();
-        // N-4: Round reset SFX
-        if (this.sound_mgr) this.sound_mgr.sfxVoFight();
-        
+        if (this.sound_mgr) this.sound_mgr.sfxVoFight?.();
+
         const fightText = this.add.text(400, 200, '¡FIGHT!', {
-            fontFamily: 'Bebas Neue, sans-serif',
-            fontSize: '80px',
-            color: '#ff0000',
-            stroke: '#ffffff',
-            strokeThickness: 5
+            fontFamily: 'Bebas Neue, sans-serif', fontSize: '80px',
+            color: '#ff0000', stroke: '#ffffff', strokeThickness: 5
         }).setOrigin(0.5).setAlpha(0).setScale(0.5);
-        
+
         this.tweens.add({
-            targets: fightText,
-            alpha: 1,
-            scale: 1.2,
-            duration: 400,
-            yoyo: true,
-            hold: 500,
-            onComplete: () => fightText.destroy()
+            targets: fightText, alpha: 1, scale: 1.2, duration: 400,
+            yoyo: true, hold: 500, onComplete: () => fightText.destroy()
         });
     }
 
     handleGameOver(data) {
         this.gameOver = true;
-        // N-4: KO SFX
-        if (this.sound_mgr) this.sound_mgr.sfxKO();
+        if (this.sound_mgr) this.sound_mgr.sfxKO?.();
 
         Object.values(this.players).forEach(p => {
             if (p.moveTween) p.moveTween.stop();
@@ -524,10 +428,8 @@ export default class FighterGame extends Phaser.Scene {
                 p.state = 'falling';
                 p.sprite.play(`ko_${p.id}`, true);
                 p.sprite.setTint(0xff6666);
-                
-                // V-17: Animación de caída lenta antes del K.O. final
                 this.time.delayedCall(800, () => {
-                    p.sprite.anims.pause(); // Se queda en el suelo
+                    p.sprite.anims.pause();
                     p.state = 'ko';
                     p.sprite.setTint(0x666666);
                 });
@@ -540,43 +442,27 @@ export default class FighterGame extends Phaser.Scene {
 
     update() {
         if (!this.matchStarted) return;
-        
-        if (this.gameOver) {
-            this.syncGraphics(); // Ensure avatars follow the falling bodies
-            return;
-        }
+        if (this.gameOver) { this.syncGraphics(); return; }
 
         const local = this.players[this.playerData.id];
         if (!local || local.state === 'hit' || local.state === 'falling' || local.state === 'ko') return;
 
         this.handleLocalInput(local);
-        
-        // Handle CPU
-        if (this.players['CPU']) {
-            this.handleCPU(this.players['CPU'], local);
-        }
+        if (this.players['CPU']) this.handleCPU(this.players['CPU'], local);
 
         this.syncGraphics();
         this.checkCombatCollision(local);
-        
-        if (this.players['CPU']) {
-            this.checkCombatCollision(this.players['CPU']);
-        }
+        if (this.players['CPU']) this.checkCombatCollision(this.players['CPU']);
 
-        // M-2: Lag compensation — Adaptive interpolation for smooth opponent movement
+        // M-2: Lag compensation — interpolación adaptativa
         Object.values(this.players).forEach(p => {
             if (!p.isLocal && !p.isCPU && p.targetX !== undefined && p.state !== 'attacking' && p.state !== 'hit' && p.state !== 'ko') {
                 const dx = Math.abs(p.sprite.x - p.targetX);
                 const dy = Math.abs(p.sprite.y - p.targetY);
-                
-                // Adaptive lerp: faster when far away to prevent rubber-banding, smoother when close
                 const lerpX = dx > 50 ? 0.95 : dx > 15 ? 0.85 : 0.7;
                 const lerpY = dy > 50 ? 0.95 : dy > 15 ? 0.85 : 0.7;
-                
                 p.sprite.x = Phaser.Math.Linear(p.sprite.x, p.targetX, lerpX);
                 p.sprite.y = Phaser.Math.Linear(p.sprite.y, p.targetY, lerpY);
-                
-                // Snap if very close (prevent micro-jitter)
                 if (dx < 0.5) p.sprite.x = p.targetX;
                 if (dy < 0.5) p.sprite.y = p.targetY;
             }
@@ -584,7 +470,6 @@ export default class FighterGame extends Phaser.Scene {
     }
 
     handleCPU(cpu, player) {
-        // H-3: CPU Difficulty configs — ALL MODES VERY HARD
         const CPU_CONFIGS = {
             facil:   { reactionMin: 8,  reactionMax: 18, blockChance: 0.55, comboChance: 0.40, jumpChance: 0.15, dodgeChance: 0.20, counterChance: 0.15 },
             normal:  { reactionMin: 3,  reactionMax: 8,  blockChance: 0.75, comboChance: 0.65, jumpChance: 0.20, dodgeChance: 0.35, counterChance: 0.30 },
@@ -592,20 +477,14 @@ export default class FighterGame extends Phaser.Scene {
         };
         const diff = { ...(CPU_CONFIGS[this.cpuDifficulty] || CPU_CONFIGS.dificil) };
 
-        // --- ADAPTIVE AI: Adjust CPU behavior based on PLAYER's fighting style ---
         const playerStyle = player.spec?.style || 'Balanceado';
         if (playerStyle === 'Agresivo') {
-            // Player hits hard but takes more damage — CPU should be very defensive and punish openings
             diff.blockChance = Math.min(0.98, diff.blockChance + 0.20);
             diff.dodgeChance = Math.min(0.70, diff.dodgeChance + 0.25);
             diff.counterChance = Math.min(0.65, diff.counterChance + 0.25);
-            diff.reactionMin = Math.max(1, diff.reactionMin - 1);
-            diff.reactionMax = Math.max(2, diff.reactionMax - 2);
         } else if (playerStyle === 'Defensivo') {
-            // Player blocks well — CPU should use more specials and combo pressure to break through
             diff.comboChance = Math.min(0.95, diff.comboChance + 0.20);
         } else if (playerStyle === 'Velocista') {
-            // Player is fast — CPU must react faster and block preemptively
             diff.reactionMin = Math.max(1, diff.reactionMin - 2);
             diff.reactionMax = Math.max(2, diff.reactionMax - 3);
             diff.blockChance = Math.min(0.95, diff.blockChance + 0.10);
@@ -613,10 +492,9 @@ export default class FighterGame extends Phaser.Scene {
 
         if (cpu.state === 'ko' || cpu.state === 'hit' || cpu.state === 'attacking') return;
 
-        const dist   = Math.abs(cpu.sprite.x - player.sprite.x);
+        const dist = Math.abs(cpu.sprite.x - player.sprite.x);
         const onGround = cpu.sprite.body.blocked.down;
 
-        // Reactive block when player attacks nearby
         if (player.state === 'attacking' && dist < 140 && onGround) {
             if (Math.random() < diff.blockChance && cpu.state !== 'blocking') {
                 cpu.sprite.setVelocityX(0);
@@ -629,7 +507,6 @@ export default class FighterGame extends Phaser.Scene {
 
         if (cpu.state === 'blocking' && player.state !== 'attacking' && cpu.cpuTimer <= 8) {
             cpu.state = 'idle';
-            // Immediate counter after dropping block
             if (Math.random() < diff.counterChance && dist < 100) {
                 this.executeAttack(cpu, 'hook');
                 cpu.cpuTimer = 5;
@@ -639,7 +516,6 @@ export default class FighterGame extends Phaser.Scene {
 
         cpu.cpuTimer--;
         if (cpu.cpuTimer > 0) return;
-
         cpu.cpuTimer = diff.reactionMin + Math.random() * (diff.reactionMax - diff.reactionMin);
 
         if (dist > 100) {
@@ -648,8 +524,6 @@ export default class FighterGame extends Phaser.Scene {
             cpu.sprite.setVelocityX(dir * 220 * cpuSpeedMult);
             cpu.sprite.play(`walk_fwd_${cpu.id}`, true);
             cpu.sprite.setFlipX(dir === -1);
-
-            // Close distance aggressively — jump-in attack if far
             if (dist > 200 && onGround && Math.random() < 0.25) {
                 cpu.sprite.setVelocityY(-500);
                 cpu.sprite.play(`jump_${cpu.id}`, true);
@@ -657,32 +531,16 @@ export default class FighterGame extends Phaser.Scene {
         } else {
             cpu.sprite.setVelocityX(0);
             const r = Math.random();
-
-            // Dodge backward when player is attacking
             if (player.state === 'attacking' && r < diff.dodgeChance && cpu.state !== 'blocking') {
                 const escapeDir = cpu.sprite.x > player.sprite.x ? 1 : -1;
                 cpu.sprite.setVelocityX(escapeDir * 350);
                 cpu.cpuTimer = 6;
                 return;
             }
-
-            // Counter-attack: punish player recovery frames
-            if (player.state === 'idle' && player.lastAnim && player.lastAnim !== 'idle' && r < diff.counterChance) {
-                const counterType = Math.random() < 0.5 ? 'hook' : 'special';
-                this.executeAttack(cpu, counterType);
-                cpu.cpuTimer = 4;
-                return;
-            }
-
-            // Chain combo attacks
             if (diff.comboChance > 0 && r < diff.comboChance) {
                 this.executeAttack(cpu, 'jab');
-                this.time.delayedCall(250, () => {
-                    if (!this.gameOver && cpu.state !== 'ko' && cpu.state !== 'hit') this.executeAttack(cpu, 'hook');
-                });
-                this.time.delayedCall(500, () => {
-                    if (!this.gameOver && cpu.state !== 'ko' && cpu.state !== 'hit') this.executeAttack(cpu, 'kick');
-                });
+                this.time.delayedCall(250, () => { if (!this.gameOver && cpu.state !== 'ko') this.executeAttack(cpu, 'hook'); });
+                this.time.delayedCall(500, () => { if (!this.gameOver && cpu.state !== 'ko') this.executeAttack(cpu, 'kick'); });
             } else if (r < 0.28) { this.executeAttack(cpu, 'jab'); }
             else if (r < 0.50)   { this.executeAttack(cpu, 'hook'); }
             else if (r < 0.68)   { this.executeAttack(cpu, 'kick'); }
@@ -703,25 +561,20 @@ export default class FighterGame extends Phaser.Scene {
         let moved = false;
         let anim = 'idle';
 
-        // Attacks
         if (Phaser.Input.Keyboard.JustDown(this.attackKeys.A)) this.executeAttack(local, 'jab');
         else if (Phaser.Input.Keyboard.JustDown(this.attackKeys.S)) this.executeAttack(local, 'hook');
         else if (Phaser.Input.Keyboard.JustDown(this.attackKeys.D)) this.executeAttack(local, 'kick');
         else if (Phaser.Input.Keyboard.JustDown(this.attackKeys.W)) this.executeAttack(local, 'special');
 
-        // Style-based speed multiplier
         const styleSpeedMult = local.spec.style === 'Velocista' ? 1.5 : local.spec.style === 'Agresivo' ? 1.1 : local.spec.style === 'Defensivo' ? 0.85 : 1.0;
         const baseSpeed = 160 + (this.stats.spd * 20);
 
-        // Blocking
         if (this.cursors.down.isDown && onGround) {
             local.sprite.setVelocityX(0);
             local.state = 'blocking';
             anim = 'block';
             moved = true;
-        }
-        // Movement
-        else if (this.cursors.left.isDown) {
+        } else if (this.cursors.left.isDown) {
             local.sprite.setVelocityX(-(baseSpeed * styleSpeedMult));
             local.sprite.setFlipX(true);
             anim = onGround ? 'walk_fwd' : 'jump';
@@ -733,39 +586,34 @@ export default class FighterGame extends Phaser.Scene {
             moved = true;
         } else {
             local.sprite.setVelocityX(0);
-            if (local.state === 'blocking') local.state = 'idle'; // FIX: Reset blocking state when button is released
+            if (local.state === 'blocking') local.state = 'idle';
         }
 
         if (onGround && !local.wasOnGround) {
-            this.emitDust(local.sprite.x, 410); // landed
-            if (this.sound_mgr) this.sound_mgr.sfxLand(); // N-4
+            this.emitDust(local.sprite.x, 410);
+            if (this.sound_mgr) this.sound_mgr.sfxLand?.();
         }
 
         if (this.cursors.up.isDown && onGround) {
             local.sprite.setVelocityY(-550);
             anim = 'jump';
             moved = true;
-            this.emitDust(local.sprite.x, 410); // jumped
-            if (this.sound_mgr) this.sound_mgr.sfxJump(); // N-4
+            this.emitDust(local.sprite.x, 410);
+            if (this.sound_mgr) this.sound_mgr.sfxJump?.();
         }
 
         local.wasOnGround = onGround;
 
         if (moved || anim !== local.lastAnim) {
             local.sprite.play(`${anim}_${local.id}`, true);
-            
-            // Throttle socket emits to ~60 updates per second (16ms)
             const now = this.time.now;
             const animChanged = anim !== local.lastAnim;
             if (!local.lastEmitTime || now - local.lastEmitTime >= 16 || animChanged) {
-                // Compact payload: round coordinates to integers (saves JSON bytes, positions are pixel-based)
-                const payload = {
+                this.socket.emit('player_move', {
                     roomId: this.roomId, id: this.playerData.id,
-                    x: Math.round(local.sprite.x),
-                    y: Math.round(local.sprite.y),
+                    x: Math.round(local.sprite.x), y: Math.round(local.sprite.y),
                     anim, flip: local.sprite.flipX
-                };
-                this.socket.emit('player_move', payload);
+                });
                 local.lastEmitTime = now;
             }
             local.lastAnim = anim;
@@ -776,24 +624,16 @@ export default class FighterGame extends Phaser.Scene {
         f.state = 'attacking';
         f.hasHit = false;
         f.sprite.play(`${type}_${f.id}`, true);
-        // N-4: Attack SFX (only for local player to avoid duplicate)
         if (f.isLocal && this.sound_mgr) {
-            if (type === 'jab')     this.sound_mgr.sfxJab();
-            else if (type === 'hook')    this.sound_mgr.sfxHook();
-            else if (type === 'kick')    this.sound_mgr.sfxKick();
-            else if (type === 'special') this.sound_mgr.sfxSpecial();
+            if (type === 'jab')          this.sound_mgr.sfxJab?.();
+            else if (type === 'hook')    this.sound_mgr.sfxHook?.();
+            else if (type === 'kick')    this.sound_mgr.sfxKick?.();
+            else if (type === 'special') this.sound_mgr.sfxSpecial?.();
         }
         this.socket.emit('player_attack', { roomId: this.roomId, id: this.playerData.id, type });
-        
-        // Timeout de seguridad en caso de que la animación sea interrumpida
         if (f.attackTimer) this.time.removeEvent(f.attackTimer);
-        f.attackTimer = this.time.delayedCall(600, () => {
-            if (f.state === 'attacking') f.state = 'idle';
-        });
-
-        f.sprite.once(`animationcomplete`, () => {
-            if (f.state === 'attacking') f.state = 'idle';
-        });
+        f.attackTimer = this.time.delayedCall(600, () => { if (f.state === 'attacking') f.state = 'idle'; });
+        f.sprite.once('animationcomplete', () => { if (f.state === 'attacking') f.state = 'idle'; });
     }
 
     checkCombatCollision(attacker) {
@@ -801,18 +641,16 @@ export default class FighterGame extends Phaser.Scene {
         const currentAnim = attacker.sprite.anims.currentAnim;
         if (!currentAnim) return;
 
-        // H-2: Per-attack hitbox configuration (Ajustado para mayor precisión/menor alcance)
         const ATTACK_HITBOXES = {
-            jab:     { xOffset: 50, yOffset:  -5, halfW: 25, halfH: 35, activeFrom: 2 },
-            hook:    { xOffset: 60, yOffset:  -5, halfW: 35, halfH: 45, activeFrom: 3 },
-            kick:    { xOffset: 75, yOffset:  20, halfW: 40, halfH: 55, activeFrom: 3 },
-            special: { xOffset: 60, yOffset: -20, halfW: 45, halfH: 65, activeFrom: 2 },
+            jab:     { xOffset: 50, yOffset: -5,  halfW: 25, halfH: 35, activeFrom: 0 },
+            hook:    { xOffset: 60, yOffset: -5,  halfW: 35, halfH: 45, activeFrom: 1 },
+            kick:    { xOffset: 75, yOffset: 20,  halfW: 40, halfH: 55, activeFrom: 1 },
+            special: { xOffset: 60, yOffset: -20, halfW: 45, halfH: 65, activeFrom: 1 },
         };
         const attackType = Object.keys(ATTACK_HITBOXES).find(k => currentAnim.key.includes(k)) || 'jab';
         const hb = ATTACK_HITBOXES[attackType];
-
         const frame = attacker.sprite.anims.currentFrame?.index ?? 0;
-        if (frame < hb.activeFrom) return; // H-2: only active during correct animation frames
+        if (frame < hb.activeFrom) return;
 
         const direction = attacker.sprite.flipX ? -1 : 1;
         const hitboxCX = attacker.sprite.x + (direction * hb.xOffset);
@@ -822,136 +660,91 @@ export default class FighterGame extends Phaser.Scene {
             if (defender.id === attacker.id) return;
 
             const defRect = defender.sprite.getBounds();
-            const defLeft  = defRect.left  + 15;
-            const defRight = defRect.right  - 15;
-            const defTop   = defRect.top;
-            const defBottom = defRect.bottom;
-
-            const isHit = hitboxCX + hb.halfW > defLeft  &&
-                          hitboxCX - hb.halfW < defRight  &&
-                          hitboxCY + hb.halfH > defTop    &&
-                          hitboxCY - hb.halfH < defBottom;
+            const isHit =
+                hitboxCX + hb.halfW > defRect.left  + 15 &&
+                hitboxCX - hb.halfW < defRect.right - 15 &&
+                hitboxCY + hb.halfH > defRect.top        &&
+                hitboxCY - hb.halfH < defRect.bottom;
 
             if (isHit) {
                 attacker.hasHit = true;
                 attacker.comboCount = (attacker.comboCount || 0) + 1;
 
-                // --- Attacker damage calculation (REDUCED for longer fights) ---
                 const BASE_DAMAGE = { jab: 3, hook: 5, kick: 4, special: 9 };
                 let baseDamage = BASE_DAMAGE[attackType] ?? 3;
 
-                // --- Fighting style SIGNIFICANT impact ---
-                if (attacker.spec.style === 'Agresivo') baseDamage *= 1.5;      // +50% damage
-                else if (attacker.spec.style === 'Defensivo') baseDamage *= 0.7; // -30% damage, but better defense below
-                else if (attacker.spec.style === 'Velocista') baseDamage *= 0.9; // Slight dmg penalty, compensated by speed
+                if (attacker.spec.style === 'Agresivo')    baseDamage *= 1.5;
+                else if (attacker.spec.style === 'Defensivo') baseDamage *= 0.7;
+                else if (attacker.spec.style === 'Velocista') baseDamage *= 0.9;
 
                 let rawDamage = baseDamage + ((attacker.spec.stats?.str || this.stats.str) * 0.8);
 
-                // --- Combo multiplier (3-hit combo = critical) ---
                 let isCombo = false;
-                if (attacker.comboCount >= 3) {
-                    rawDamage *= 1.6; // Combos are devastating but hard to land
-                    isCombo = true;
-                    attacker.comboCount = 0;
-                }
+                if (attacker.comboCount >= 3) { rawDamage *= 1.6; isCombo = true; attacker.comboCount = 0; }
 
-                // --- Defender damage reductions --- 
                 let finalDamage = rawDamage - (defender.spec.stats?.res || 0) * 0.5;
-                
-                // Style-based defense
-                if (defender.spec.style === 'Defensivo') finalDamage *= 0.55;  // -45% damage taken!
-                if (defender.spec.style === 'Agresivo')  finalDamage *= 1.25;  // +25% damage taken (glass cannon)
-                if (defender.spec.style === 'Velocista') finalDamage *= 0.85;  // Slight dodge mitigation
-                
+                if (defender.spec.style === 'Defensivo') finalDamage *= 0.55;
+                if (defender.spec.style === 'Agresivo')  finalDamage *= 1.25;
+                if (defender.spec.style === 'Velocista') finalDamage *= 0.85;
+
                 if (defender.state === 'blocking') {
-                    // Defensivo blocks ALL, others still take chip damage
-                    if (defender.spec.style === 'Defensivo') {
-                        finalDamage = 0;
-                    } else {
-                        finalDamage = Math.max(1, Math.round(finalDamage * 0.15)); // 15% chip damage through block
-                    }
+                    finalDamage = defender.spec.style === 'Defensivo' ? 0 : Math.max(1, Math.round(finalDamage * 0.15));
                 } else {
                     finalDamage = Math.max(1, Math.round(finalDamage));
                 }
 
-                // Emit the pre-calculated damage so defender doesn't recalculate
+                // ✅ Emitir al servidor — el servidor valida y actualiza el HP autoritativo
                 this.socket.emit('player_hit', {
                     roomId: this.roomId,
                     targetId: defender.id,
-                    finalDamage,          // C-1: use finalDamage, not raw damage
+                    finalDamage,
                     attackerX: attacker.sprite.x,
                     isCombo
                 });
-                // Apply locally with flag so handleHit skips recalculation
-                this.handleHit(defender.id, finalDamage, attacker.sprite.x, isCombo, true);
+
+                // ✅ Efectos visuales locales inmediatos (no esperamos al servidor para la animación)
+                this.handleHitVisuals(defender.id, finalDamage, attacker.sprite.x, isCombo);
+
+                // ✅ Para modo CPU: actualizar HP local
+                if (this.gameState.players.length === 1) {
+                    this.game.events.emit('updateHP', { id: defender.id, damage: finalDamage });
+                }
             }
         });
     }
 
-    // C-1: isPreCalculated=true skips defender stat recalculation (damage already computed by attacker)
-    handleHit(targetId, damage, attackerX, isCombo = false, isPreCalculated = false) {
+    // ✅ FIX CLAVE: handleHitVisuals solo hace efectos — NO actualiza HP
+    // El HP lo actualiza el servidor via hp_update → GameView → HUD
+    handleHitVisuals(targetId, damage, attackerX, isCombo = false) {
         const target = this.players[targetId];
         if (!target) return;
 
         target.comboCount = 0;
 
-        let finalDamage;
-        if (isPreCalculated) {
-            // Damage already includes all reductions — use as-is
-            finalDamage = damage;
-        } else {
-            // Fallback: compute reductions locally (only used by CPU matches where no socket is involved)
-            finalDamage = damage - (target.spec.stats?.res || 0) * 0.5;
-            
-            // Style-based defense
-            if (target.spec.style === 'Defensivo') finalDamage *= 0.55;
-            if (target.spec.style === 'Agresivo')  finalDamage *= 1.25;
-            if (target.spec.style === 'Velocista') finalDamage *= 0.85;
-            
-            if (target.state === 'blocking') {
-                if (target.spec.style === 'Defensivo') {
-                    finalDamage = 0;
-                } else {
-                    finalDamage = Math.max(1, Math.round(finalDamage * 0.15));
-                }
-            } else {
-                finalDamage = Math.max(1, Math.round(finalDamage));
-            }
-        }
-
-        const prevState = target.state; // N-4 fix: capture state before overwrite
-        
-        if (finalDamage === 0) {
-            // Just show block impact
+        if (damage === 0) {
             target.sprite.play(`block_${target.id}`, true);
-            if (this.sound_mgr) this.sound_mgr.sfxBlock();
+            if (this.sound_mgr) this.sound_mgr.sfxBlock?.();
             const dir = target.sprite.x > attackerX ? 1 : -1;
             target.sprite.setVelocityX(dir * 100);
-            return; // don't update HP, don't enter hit state
+            return;
         }
 
+        const prevState = target.state;
         target.state = 'hit';
         target.sprite.play(`hit_${target.id}`, true);
         target.sprite.setTint(0xff0000);
-        // N-4: Hit / Block SFX
+
         if (this.sound_mgr) {
-            if (prevState === 'blocking') this.sound_mgr.sfxBlock();
-            else if (isCombo) this.sound_mgr.sfxCombo();
-            else this.sound_mgr.sfxHit();
+            if (prevState === 'blocking') this.sound_mgr.sfxBlock?.();
+            else if (isCombo)            this.sound_mgr.sfxCombo?.();
+            else                         this.sound_mgr.sfxHit?.();
         }
 
-        // Impact FX
         const color = attackerX > target.sprite.x ? 0xffcccc : 0xccffff;
         const emitter = this.add.particles(target.sprite.x, target.sprite.y - 30, 'particle_star', {
-            speed: { min: 200, max: 600 },
-            angle: { min: 0, max: 360 },
-            scale: { start: 1, end: 0 },
-            blendMode: 'ADD',
-            lifespan: 350,
-            tint: color,
-            gravityY: 600,
-            quantity: 15,
-            emitting: false
+            speed: { min: 200, max: 600 }, angle: { min: 0, max: 360 },
+            scale: { start: 1, end: 0 }, blendMode: 'ADD',
+            lifespan: 350, tint: color, gravityY: 600, quantity: 15, emitting: false
         });
         emitter.explode();
         this.time.delayedCall(500, () => emitter.destroy());
@@ -960,72 +753,46 @@ export default class FighterGame extends Phaser.Scene {
 
         if (isCombo) {
             const comboText = this.add.text(target.sprite.x, target.sprite.y - 80, '¡COMBO CRÍTICO!', {
-                fontFamily: 'Bebas Neue, sans-serif',
-                fontSize: '28px',
-                color: '#ff0000',
-                stroke: '#ffffff',
-                strokeThickness: 3
+                fontFamily: 'Bebas Neue, sans-serif', fontSize: '28px',
+                color: '#ff0000', stroke: '#ffffff', strokeThickness: 3
             }).setOrigin(0.5);
             this.tweens.add({
-                targets: comboText,
-                y: comboText.y - 40,
-                alpha: 0,
-                duration: 1000,
-                ease: 'Power2',
-                onComplete: () => comboText.destroy()
+                targets: comboText, y: comboText.y - 40, alpha: 0, duration: 1000,
+                ease: 'Power2', onComplete: () => comboText.destroy()
             });
         }
 
         const dir = target.sprite.x > attackerX ? 1 : -1;
-        target.sprite.setVelocityX(dir * (isCombo ? 400 : 200 + finalDamage * 5));
+        target.sprite.setVelocityX(dir * (isCombo ? 400 : 200 + damage * 5));
         this.time.delayedCall(200, () => {
             target.sprite.clearTint();
             if (target.state !== 'ko' && target.state !== 'falling') target.state = 'idle';
         });
-        this.game.events.emit('updateHP', { id: targetId, damage: finalDamage });
     }
 
     showEmote(playerId, emote) {
         const p = this.players[playerId];
         if (!p) return;
-
-        const text = this.add.text(p.sprite.x, p.sprite.y - 120, emote, {
-            fontSize: '48px'
-        }).setOrigin(0.5);
-
-        this.tweens.add({
-            targets: text,
-            y: text.y - 60,
-            alpha: 0,
-            duration: 1500,
-            ease: 'Cubic.out',
-            onComplete: () => text.destroy()
-        });
+        const text = this.add.text(p.sprite.x, p.sprite.y - 120, emote, { fontSize: '48px' }).setOrigin(0.5);
+        this.tweens.add({ targets: text, y: text.y - 60, alpha: 0, duration: 1500, ease: 'Cubic.out', onComplete: () => text.destroy() });
     }
 
     syncGraphics() {
         Object.values(this.players).forEach(p => {
             if (p.face) {
-                let animOffsetY = 0;
-                let animOffsetX = 0;
+                let animOffsetY = 0, animOffsetX = 0;
                 const anim = p.sprite.anims.currentAnim?.key || '';
-                
-                // Pequeños ajustes según la animación para que el avatar siga la cabeza
                 if (anim.includes('hit'))   { animOffsetY = 12; animOffsetX = -10; }
-                if (anim.includes('block')) { animOffsetY = 8;  animOffsetX = -4; }
+                if (anim.includes('block')) { animOffsetY = 8; animOffsetX = -4; }
                 if (anim.includes('ko') || anim.includes('falling')) { animOffsetY = 40; }
                 if (anim.includes('jump'))  { animOffsetY = -10; }
-                if (anim.includes('jab') || anim.includes('hook') || anim.includes('kick')) {
-                    animOffsetX = 8;
-                }
+                if (anim.includes('jab') || anim.includes('hook') || anim.includes('kick')) { animOffsetX = 8; }
 
                 const topPct = p.spec?.headPos ? parseFloat(p.spec.headPos.top) / 100 : 0.20;
                 const h = p.spec?.fHeight || 192;
-                const baseFaceYOffset = (-h / 2) + (h * topPct) - 45; // Move face 45px higher
-                
+                const baseFaceYOffset = (-h / 2) + (h * topPct) - 45;
                 const dir = p.sprite.flipX ? -1 : 1;
-                
-                // Posicionar el avatar sobre la cabeza del sprite
+
                 p.face.x = p.sprite.x + (animOffsetX * dir);
                 p.face.y = p.sprite.y + baseFaceYOffset + animOffsetY;
                 p.face.setFlipX(p.sprite.flipX);

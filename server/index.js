@@ -5,8 +5,6 @@ const cors = require('cors');
 
 const app = express();
 app.use(cors());
-
-// Health check for Render/Deployment
 app.get('/health', (req, res) => res.send('OK'));
 
 const server = http.createServer(app);
@@ -15,39 +13,33 @@ const io = new Server(server, {
         origin: process.env.CLIENT_URL || "*",
         methods: ["GET", "POST"]
     },
-    maxHttpBufferSize: 1e7, // 10MB
-    // === Low-latency optimizations for real-time fighting game ===
-    transports: ['websocket'],       // WebSocket only — skip long-polling overhead
-    allowUpgrades: false,            // No transport upgrade dance
-    pingInterval: 10000,             // 10s heartbeat interval
-    pingTimeout: 5000,               // 5s timeout before disconnect
-    perMessageDeflate: false,        // Disable compression for speed (fight data is small)
-    httpCompression: false,          // No HTTP compression on WS
-    connectTimeout: 8000,            // 8s connection timeout
+    maxHttpBufferSize: 1e7,
+    transports: ['websocket'],
+    allowUpgrades: false,
+    pingInterval: 10000,
+    pingTimeout: 5000,
+    perMessageDeflate: false,
+    httpCompression: false,
+    connectTimeout: 8000,
     connectionStateRecovery: {
-        maxDisconnectionDuration: 5000, // 5s grace period for mobile reconnects
+        maxDisconnectionDuration: 5000,
         skipMiddlewares: true
     }
 });
 
 const rooms = new Map();
-const tournaments = new Map(); // Multiple tournaments now
+const tournaments = new Map();
+
+// ─── HELPERS ──────────────────────────────────────────────────────────────────
 
 function getAvailableTournaments() {
-    return Array.from(tournaments.values())
-        .map(t => ({
-            id: t.id,
-            name: t.name,
-            creatorId: t.creatorId,
-            active: t.active,
-            players: t.players,
-            brackets: t.brackets,
-            round: t.round,
-            matches: t.matches
-        }));
+    return Array.from(tournaments.values()).map(t => ({
+        id: t.id, name: t.name, creatorId: t.creatorId,
+        active: t.active, players: t.players,
+        brackets: t.brackets, round: t.round, matches: t.matches
+    }));
 }
 
-// Helper: Generate single elimination bracket AND register rooms for each match
 function generateBrackets(players, tournamentId, roundNum) {
     const shuffled = [...players].sort(() => Math.random() - 0.5);
     const matches = [];
@@ -55,8 +47,7 @@ function generateBrackets(players, tournamentId, roundNum) {
         const matchId = `T-${tournamentId}-R${roundNum}-${i}`;
         if (shuffled[i + 1]) {
             matches.push({ p1: shuffled[i], p2: shuffled[i + 1], winner: null, id: matchId });
-            // ✅ Create the room so player_ready can find it
-            rooms.set(matchId, { players: [] });
+            rooms.set(matchId, { players: [], hp: { left: 100, right: 100 }, ringStarted: false, roundTransitioning: false });
         } else {
             matches.push({ p1: shuffled[i], p2: null, winner: shuffled[i], id: matchId, bye: true });
         }
@@ -64,18 +55,47 @@ function generateBrackets(players, tournamentId, roundNum) {
     return matches;
 }
 
+// ✅ FIX 1: HP AUTORITATIVO — el servidor lleva el HP real
+function createRoomState() {
+    return {
+        players: [],
+        hp: { left: 100, right: 100 },
+        ringStarted: false,
+        roundTransitioning: false,
+        round: 1,
+        wins: { left: 0, right: 0 },
+        rematchRequests: new Set()
+    };
+}
+
+function resetRoomHp(room) {
+    room.hp = { left: 100, right: 100 };
+    room.roundTransitioning = false;
+}
+
+// ✅ FIX 2: Rate limiter por socket
+function createRateLimiter(maxPerSec) {
+    const counts = new Map();
+    return function(socketId) {
+        const now = Date.now();
+        const entry = counts.get(socketId) || { count: 0, reset: now + 1000 };
+        if (now > entry.reset) { entry.count = 0; entry.reset = now + 1000; }
+        entry.count++;
+        counts.set(socketId, entry);
+        return entry.count <= maxPerSec;
+    };
+}
+
+const attackRateLimit = createRateLimiter(10);  // max 10 ataques/seg
+const moveRateLimit   = createRateLimiter(62);  // max ~60fps de movimiento
+
 function processTournamentWin(roomId, winnerId) {
-    // Buscar en qué torneo está el match
     let foundTournament = null;
     let match = null;
 
     for (let [id, t] of tournaments.entries()) {
         const m = t.matches.find(m => m.id === roomId);
-        if (m) {
-            foundTournament = t;
-            match = m;
-            break;
-        }
+        if (m) { foundTournament = t; match = m; break; }
     }
 
     if (match && !match.winner) {
@@ -86,10 +106,8 @@ function processTournamentWin(roomId, winnerId) {
         if (!match.winner) return;
 
         console.log(`Match ${roomId} winner: ${match.winner.name}`);
-        
-        // ✅ M-4: Clean up the finished match room to prevent memory leaks
         rooms.delete(roomId);
-        
+
         const unfinished = foundTournament.matches.filter(m => !m.winner);
         if (unfinished.length === 0) {
             const winners = foundTournament.matches.map(m => m.winner);
@@ -97,36 +115,31 @@ function processTournamentWin(roomId, winnerId) {
                 io.to(foundTournament.id).emit('tournament_finished', { winner: winners[0] });
                 foundTournament.active = false;
                 foundTournament.players = [];
-                // ✅ M-4: Clean up all remaining rooms from this tournament
                 foundTournament.matches.forEach(m => rooms.delete(m.id));
             } else {
                 foundTournament.round++;
                 foundTournament.matches = generateBrackets(winners, foundTournament.id, foundTournament.round);
                 io.to(foundTournament.id).emit('next_round', { matches: foundTournament.matches, round: foundTournament.round });
-                // Notify next round players of their match
                 setTimeout(() => {
                     foundTournament.matches.forEach(m => {
                         if (!m.bye) {
-                            // Pre-warm rooms for next round
                             const matchRoom = rooms.get(m.id);
-                            if (matchRoom) {
-                                matchRoom.players = [];
-                                matchRoom.inRing = false;
-                            }
+                            if (matchRoom) { matchRoom.players = []; matchRoom.ringStarted = false; }
                             io.to(m.p1.id).emit('join_match', { roomId: m.id, opponent: m.p2, tournamentId: foundTournament.id });
                             io.to(m.p2.id).emit('join_match', { roomId: m.id, opponent: m.p1, tournamentId: foundTournament.id });
                         }
                     });
-                }, 5000); // 5s delay to show bracket screen
+                }, 5000);
             }
         }
     }
 }
 
+// ─── SOCKET EVENTS ────────────────────────────────────────────────────────────
+
 io.on('connection', (socket) => {
     console.log('User connected:', socket.id);
 
-    // Enviar torneos disponibles al conectarse
     socket.on('get_tournaments', () => {
         socket.emit('available_tournaments', getAvailableTournaments());
     });
@@ -134,16 +147,10 @@ io.on('connection', (socket) => {
     // --- LOBBY & ROOMS ---
     socket.on('join_room', (data) => {
         const { roomId, playerName, playerFace } = data;
-        
-        if (!rooms.has(roomId)) {
-            rooms.set(roomId, { players: [] });
-        }
-        
+        if (!rooms.has(roomId)) rooms.set(roomId, createRoomState());
+
         const room = rooms.get(roomId);
-        if (room.players.length >= 2) {
-            socket.emit('room_full');
-            return;
-        }
+        if (room.players.length >= 2) { socket.emit('room_full'); return; }
 
         const player = {
             id: socket.id,
@@ -154,7 +161,6 @@ io.on('connection', (socket) => {
 
         room.players.push(player);
         socket.join(roomId);
-        
         socket.emit('joined_room', { player, opponents: room.players.filter(p => p.id !== socket.id) });
         socket.to(roomId).emit('player_joined', player);
     });
@@ -177,14 +183,12 @@ io.on('connection', (socket) => {
                 if (t && !t.active) {
                     tournaments.delete(tournamentId);
                     io.emit('available_tournaments', getAvailableTournaments());
-                    io.to(tournamentId).emit('tournament_cancelled', 'El torneo ha sido cancelado por inactividad (sin iniciar).');
+                    io.to(tournamentId).emit('tournament_cancelled', 'El torneo fue cancelado por inactividad.');
                 }
-            }, 3 * 60 * 1000) // 3 minutes timeout
+            }, 3 * 60 * 1000)
         };
         tournaments.set(tournamentId, newTournament);
         io.emit('available_tournaments', getAvailableTournaments());
-        
-        // Remove timeout from response
         const { timeout, ...clientTournament } = newTournament;
         socket.emit('tournament_created', clientTournament);
     });
@@ -205,12 +209,7 @@ io.on('connection', (socket) => {
         const tournament = tournaments.get(tournamentId);
         if (tournament && !tournament.active) {
             const exists = tournament.players.find(p => p.id === socket.id);
-            if (!exists) {
-                tournament.players.push({
-                    id: socket.id,
-                    name: playerName
-                });
-            }
+            if (!exists) tournament.players.push({ id: socket.id, name: playerName });
             const { timeout: _t, ...safeT } = tournament;
             io.emit('tournament_info', safeT);
             io.emit('available_tournaments', getAvailableTournaments());
@@ -237,51 +236,35 @@ io.on('connection', (socket) => {
         const { tournamentId } = data;
         const t = tournaments.get(tournamentId);
         if (!t || t.creatorId !== socket.id) return;
-
-        if (t.players.length < 2) {
-            socket.emit('error', 'Not enough players (min 2)');
-            return;
-        }
-        
+        if (t.players.length < 2) { socket.emit('error', 'Not enough players (min 2)'); return; }
         if (t.timeout) clearTimeout(t.timeout);
 
         t.active = true;
         t.round = 1;
         t.matches = generateBrackets(t.players, t.id, 1);
-        
+
         io.to(t.id).emit('tournament_started', { matches: t.matches, round: 1 });
         io.emit('available_tournaments', getAvailableTournaments());
-        
-        // Delay join_match so players can see the bracket screen for a few seconds
+
         setTimeout(() => {
             t.matches.forEach(m => {
                 if (!m.bye) {
-                    // Pre-warm rooms: ensure both players are in the socket room before match starts
                     const matchRoom = rooms.get(m.id);
-                    if (matchRoom) {
-                        matchRoom.players = []; // Reset for fresh match
-                        matchRoom.inRing = false;
-                    }
+                    if (matchRoom) { matchRoom.players = []; matchRoom.ringStarted = false; }
                     io.to(m.p1.id).emit('join_match', { roomId: m.id, opponent: m.p2, tournamentId: t.id });
                     io.to(m.p2.id).emit('join_match', { roomId: m.id, opponent: m.p1, tournamentId: t.id });
                 }
             });
-        }, 5000); // 5s delay to show bracket
+        }, 5000);
     });
 
     socket.on('register_tournament', (data) => {
         const { tournamentId, playerName, face } = data;
         const t = tournaments.get(tournamentId);
         if (!t || t.active) return;
-
-        // ✅ H-5: Prevent duplicate registration
         const alreadyRegistered = t.players.some(p => p.id === socket.id);
-        if (alreadyRegistered) {
-            socket.emit('tournament_players_update', t.players); // re-sync in case client is out of sync
-            return;
-        }
-
-        const player = { id: socket.id, name: playerName, face: face };
+        if (alreadyRegistered) { socket.emit('tournament_players_update', t.players); return; }
+        const player = { id: socket.id, name: playerName, face };
         t.players.push(player);
         io.to(t.id).emit('tournament_players_update', t.players);
     });
@@ -295,14 +278,9 @@ io.on('connection', (socket) => {
     socket.on('player_ready', (data) => {
         const { roomId, face, character, playerName } = data;
         let room = rooms.get(roomId);
-        // ✅ Fallback: if room doesn't exist yet (e.g., race condition), create it
-        if (!room) {
-            room = { players: [] };
-            rooms.set(roomId, room);
-        }
+        if (!room) { room = createRoomState(); rooms.set(roomId, room); }
 
         let player = room.players.find(p => p.id === socket.id);
-        // ✅ If player not in room yet (tournament match), add them with their name
         if (!player) {
             player = { id: socket.id, name: playerName || 'Jugador', side: room.players.length === 0 ? 'left' : 'right' };
             room.players.push(player);
@@ -314,66 +292,143 @@ io.on('connection', (socket) => {
         player.name = playerName || player.name;
         player.ready = true;
         socket.to(roomId).emit('opponent_ready', { id: socket.id, face, character });
-        
+
         if (room.players.length === 2 && room.players.every(p => p.ready)) {
             io.to(roomId).emit('start_game', { players: room.players });
         }
     });
 
+    // ✅ FIX 3: ring start con flag para evitar doble emisión
     socket.on('player_in_ring', (data) => {
         const { roomId } = data;
         let room = rooms.get(roomId);
-        
-        // Fallback: create room if it doesn't exist (can happen in tournament race conditions)
+
         if (!room) {
-            console.warn(`[player_in_ring] Room ${roomId} not found, creating it for ${socket.id}`);
-            room = { players: [] };
+            console.warn(`[player_in_ring] Room ${roomId} not found, creating for ${socket.id}`);
+            room = createRoomState();
             rooms.set(roomId, room);
         }
-        
-        // Ensure socket is in the socket.io room
+
         socket.join(roomId);
-        
+
         let player = room.players.find(p => p.id === socket.id);
         if (!player) {
-            // Player not found in room — add them (tournament edge case)
-            console.warn(`[player_in_ring] Player ${socket.id} not in room ${roomId}, adding`);
             player = { id: socket.id, name: 'Jugador', side: room.players.length === 0 ? 'left' : 'right' };
             room.players.push(player);
         }
-        
+
         player.inRing = true;
-        console.log(`[player_in_ring] ${socket.id} is in ring for ${roomId}. Players: ${room.players.map(p => p.id + ':' + (p.inRing ? 'READY' : 'waiting')).join(', ')}`);
-        
-        if (room.players.length >= 2 && room.players.every(p => p.inRing)) {
+        console.log(`[player_in_ring] ${socket.id} ready in ${roomId}. Ready: ${room.players.filter(p => p.inRing).length}/2`);
+
+        // ✅ FIX: flag ringStarted evita doble emisión
+        if (!room.ringStarted && room.players.filter(p => p.inRing).length >= 2) {
+            room.ringStarted = true;
             console.log(`[both_players_in_ring] Emitting for room ${roomId}`);
+            // ✅ Reiniciar HP al iniciar la partida
+            resetRoomHp(room);
             io.to(roomId).emit('both_players_in_ring');
-        } else if (room.players.length < 2) {
-            // Only 1 player in room — the other might not have done player_ready yet
-            // Re-check after a short delay
+            // ✅ Enviar HP inicial a ambos jugadores
+            io.to(roomId).emit('hp_update', room.hp);
+        } else if (!room.ringStarted) {
+            // Re-check after delay in case of race condition
             setTimeout(() => {
                 const r = rooms.get(roomId);
-                if (r && r.players.length >= 2 && r.players.every(p => p.inRing)) {
+                if (r && !r.ringStarted && r.players.filter(p => p.inRing).length >= 2) {
+                    r.ringStarted = true;
+                    resetRoomHp(r);
                     console.log(`[both_players_in_ring] Delayed emit for room ${roomId}`);
                     io.to(roomId).emit('both_players_in_ring');
+                    io.to(roomId).emit('hp_update', r.hp);
                 }
-            }, 3000);
+            }, 2000);
         }
     });
 
+    // ✅ FIX 4: Rate limiting en movimiento
     socket.on('player_move', (data) => {
+        if (!moveRateLimit(socket.id)) return;
         const { roomId, ...moveData } = data;
         socket.volatile.to(roomId).emit('opponent_move', moveData);
     });
 
+    // ✅ FIX 5: Rate limiting en ataques
     socket.on('player_attack', (data) => {
+        if (!attackRateLimit(socket.id)) return;
         const { roomId, ...attackData } = data;
         socket.to(roomId).emit('opponent_attack', attackData);
     });
 
+    // ✅ FIX 6: HP AUTORITATIVO — el servidor calcula y valida el HP
     socket.on('player_hit', (data) => {
-        const { roomId, ...hitData } = data;
-        socket.to(roomId).emit('opponent_hit', hitData);
+        const { roomId, targetId, finalDamage, attackerX, isCombo } = data;
+        const room = rooms.get(roomId);
+        if (!room || room.roundTransitioning) return;
+
+        // Validar que el atacante es quien está en la sala
+        const attacker = room.players.find(p => p.id === socket.id);
+        if (!attacker) return;
+
+        // Validar rango de daño (anti-cheat básico)
+        const MAX_DAMAGE = 50;
+        const validatedDamage = Math.min(Math.max(0, Math.round(finalDamage)), MAX_DAMAGE);
+        if (validatedDamage <= 0) return;
+
+        // Determinar lado del defensor
+        const defender = room.players.find(p => p.id === targetId);
+        const defenderSide = defender?.side || (attacker.side === 'left' ? 'right' : 'left');
+
+        // Aplicar daño al HP autoritativo del servidor
+        room.hp[defenderSide] = Math.max(0, room.hp[defenderSide] - validatedDamage);
+
+        console.log(`[hit] Room ${roomId}: ${defenderSide} HP = ${room.hp[defenderSide]} (-${validatedDamage})`);
+
+        // ✅ Emitir HP actualizado a AMBOS jugadores simultáneamente
+        io.to(roomId).emit('hp_update', room.hp);
+
+        // ✅ Propagar el hit visual al oponente
+        socket.to(roomId).emit('opponent_hit', { targetId, finalDamage: validatedDamage, attackerX, isCombo });
+
+        // ✅ FIX 7: El SERVIDOR detecta el KO y controla la transición de ronda
+        if (room.hp[defenderSide] <= 0 && !room.roundTransitioning) {
+            room.roundTransitioning = true;
+            const winnerId = defenderSide === 'left'
+                ? room.players.find(p => p.side === 'right')?.id
+                : room.players.find(p => p.side === 'left')?.id;
+
+            console.log(`[KO] Room ${roomId}: ${defenderSide} KO. Winner: ${winnerId}`);
+
+            // Notificar KO a ambos jugadores
+            io.to(roomId).emit('server_ko', { loserId: targetId, winnerId });
+
+            // El servidor espera y emite el inicio de la siguiente ronda
+            setTimeout(() => {
+                const r = rooms.get(roomId);
+                if (!r) return;
+
+                // Actualizar victorias
+                if (!r.wins) r.wins = { left: 0, right: 0 };
+                const winnerSide = defenderSide === 'left' ? 'right' : 'left';
+                r.wins[winnerSide]++;
+
+                if (r.wins.left >= 2 || r.wins.right >= 2) {
+                    // Fin del match
+                    io.to(roomId).emit('match_over', {
+                        winnerId,
+                        wins: r.wins
+                    });
+                    // Reportar victoria en torneo si aplica
+                    if (roomId.startsWith('T-') && winnerId) {
+                        processTournamentWin(roomId, winnerId);
+                    }
+                } else {
+                    // Siguiente ronda
+                    resetRoomHp(r);
+                    r.round = (r.round || 1) + 1;
+                    console.log(`[start_next_round] Room ${roomId} Round ${r.round}`);
+                    io.to(roomId).emit('start_next_round', { hp: r.hp, wins: r.wins, round: r.round });
+                }
+            }, 2500);
+        }
     });
 
     socket.on('player_emote', (data) => {
@@ -381,26 +436,49 @@ io.on('connection', (socket) => {
         socket.to(roomId).emit('opponent_emote', { id: socket.id, emote });
     });
 
-    // N-6: Rematch system for non-tournament matches
+    // ✅ FIX 8: round_ended del cliente ya no controla la ronda
+    // Solo se usa como fallback informativo para el servidor
+    socket.on('round_ended', (data) => {
+        // Ignorado — el servidor detecta el KO directamente en player_hit
+        // Mantenido por compatibilidad con modo CPU (single player)
+        const { roomId, winnerId } = data;
+        const room = rooms.get(roomId);
+        if (!room || room.roundTransitioning) return;
+
+        // Solo aplica para modo CPU donde no hay player_hit del servidor
+        const isCPURoom = room.players.length < 2;
+        if (!isCPURoom) return;
+
+        room.roundTransitioning = true;
+        setTimeout(() => {
+            if (rooms.has(roomId)) {
+                const r = rooms.get(roomId);
+                r.roundTransitioning = false;
+                io.to(roomId).emit('start_next_round', { hp: { left: 100, right: 100 }, round: (r.round || 1) + 1 });
+            }
+        }, 2500);
+    });
+
+    // --- REMATCH ---
     socket.on('request_rematch', (data) => {
         const { roomId } = data;
         const room = rooms.get(roomId);
         if (!room) return;
 
-        // Initialize rematch tracking if not present
         if (!room.rematchRequests) room.rematchRequests = new Set();
         room.rematchRequests.add(socket.id);
-
-        // Notify opponent that rematch was requested
         socket.to(roomId).emit('rematch_requested', { by: socket.id });
 
-        // If both players requested rematch, accept
         const roomPlayerIds = room.players.map(p => p.id);
         const allRequested = roomPlayerIds.every(pid => room.rematchRequests.has(pid));
         if (room.players.length === 2 && allRequested) {
-            // Reset room state for new match
             room.rematchRequests = new Set();
-            room.players.forEach(p => { p.ready = false; });
+            room.players.forEach(p => { p.ready = false; p.inRing = false; });
+            // ✅ Reset completo del estado de la sala
+            resetRoomHp(room);
+            room.ringStarted = false;
+            room.round = 1;
+            room.wins = { left: 0, right: 0 };
             io.to(roomId).emit('rematch_accepted');
             console.log(`Rematch accepted in room ${roomId}`);
         }
@@ -409,10 +487,8 @@ io.on('connection', (socket) => {
     socket.on('decline_rematch', (data) => {
         const { roomId } = data;
         const room = rooms.get(roomId);
-        if (room) {
-            room.rematchRequests = new Set();
-            socket.to(roomId).emit('rematch_declined');
-        }
+        if (room) { room.rematchRequests = new Set(); }
+        socket.to(roomId).emit('rematch_declined');
     });
 
     socket.on('leave_match', (data) => {
@@ -430,24 +506,25 @@ io.on('connection', (socket) => {
         socket.leave(roomId);
     });
 
+    // --- DISCONNECT ---
     socket.on('disconnect', () => {
         console.log('User disconnected:', socket.id);
-        
-        // M-7: Grace period para micro-cortes de red en móviles
+
         setTimeout(() => {
             if (io.sockets.sockets.has(socket.id) || socket.recovered) {
-                console.log(`Socket ${socket.id} recovered within grace period. Ignoring disconnect.`);
+                console.log(`Socket ${socket.id} recovered. Ignoring disconnect.`);
                 return;
             }
 
-            // Handle tournament logic
             for (let [id, t] of tournaments.entries()) {
                 if (t.active) {
-                    const activeMatch = t.matches.find(m => !m.winner && ((m.p1 && m.p1.id === socket.id) || (m.p2 && m.p2.id === socket.id)));
+                    const activeMatch = t.matches.find(m =>
+                        !m.winner && ((m.p1 && m.p1.id === socket.id) || (m.p2 && m.p2.id === socket.id))
+                    );
                     if (activeMatch) {
                         const winner = (activeMatch.p1 && activeMatch.p1.id === socket.id) ? activeMatch.p2 : activeMatch.p1;
                         if (winner) {
-                            console.log(`Player ${socket.id} disconnected. Match ${activeMatch.id} won by ${winner.name} (forfeit).`);
+                            console.log(`Forfeit: ${socket.id} disconnected. ${winner.name} wins ${activeMatch.id}`);
                             processTournamentWin(activeMatch.id, winner.id);
                         }
                     }
@@ -458,17 +535,15 @@ io.on('connection', (socket) => {
                         io.to(t.id).emit('tournament_players_update', t.players);
                     }
                 }
-                
-                // Si el creador se desconecta y no está activo, borrar torneo
+
                 if (t.creatorId === socket.id && !t.active) {
                     if (t.timeout) clearTimeout(t.timeout);
                     tournaments.delete(id);
                     io.emit('available_tournaments', getAvailableTournaments());
-                    io.to(t.id).emit('tournament_cancelled', 'El torneo ha sido cancelado porque el creador se desconectó.');
+                    io.to(t.id).emit('tournament_cancelled', 'El torneo fue cancelado porque el creador se desconectó.');
                 }
             }
 
-            // Clean up rooms
             rooms.forEach((room, roomId) => {
                 const playerIndex = room.players.findIndex(p => p.id === socket.id);
                 if (playerIndex !== -1) {
@@ -478,11 +553,9 @@ io.on('connection', (socket) => {
                     if (room.players.length === 0) rooms.delete(roomId);
                 }
             });
-        }, 5000); // 5 segundos de espera
+        }, 5000);
     });
 });
 
 const PORT = process.env.PORT || 3001;
-server.listen(PORT, () => {
-    console.log(`Server running on port ${PORT}`);
-});
+server.listen(PORT, () => console.log(`Server running on port ${PORT}`));
