@@ -872,6 +872,7 @@ export default class FighterGame extends Phaser.Scene {
                 // ✅ Emitir al servidor — el servidor valida y actualiza el HP autoritativo
                 this.socket.emit('player_hit', {
                     roomId: this.roomId,
+                    id: attacker.id,
                     targetId: defender.id,
                     finalDamage,
                     attackerX: attacker.sprite.x,

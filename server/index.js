@@ -129,6 +129,16 @@ function processTournamentWin(roomId, winnerId) {
                 setTimeout(() => {
                     foundTournament.matches.forEach(m => {
                         if (!m.bye) {
+                            const p1Online = io.sockets.sockets.has(m.p1.id);
+                            const p2Online = io.sockets.sockets.has(m.p2.id);
+
+                            if (!p1Online || !p2Online) {
+                                const autoWinnerId = p1Online ? m.p1.id : (p2Online ? m.p2.id : m.p1.id);
+                                console.log(`[Tournament] Match ${m.id} auto-forfeit due to offline player. Winner: ${autoWinnerId}`);
+                                processTournamentWin(m.id, autoWinnerId);
+                                return;
+                            }
+
                             const matchRoom = rooms.get(m.id);
                             if (matchRoom) { matchRoom.players = []; matchRoom.ringStarted = false; }
                             io.to(m.p1.id).emit('join_match', { roomId: m.id, opponent: m.p2, tournamentId: foundTournament.id });
@@ -256,6 +266,16 @@ io.on('connection', (socket) => {
         setTimeout(() => {
             t.matches.forEach(m => {
                 if (!m.bye) {
+                    const p1Online = io.sockets.sockets.has(m.p1.id);
+                    const p2Online = io.sockets.sockets.has(m.p2.id);
+
+                    if (!p1Online || !p2Online) {
+                        const autoWinnerId = p1Online ? m.p1.id : (p2Online ? m.p2.id : m.p1.id);
+                        console.log(`[Tournament] Match ${m.id} auto-forfeit due to offline player. Winner: ${autoWinnerId}`);
+                        processTournamentWin(m.id, autoWinnerId);
+                        return;
+                    }
+
                     const matchRoom = rooms.get(m.id);
                     if (matchRoom) { matchRoom.players = []; matchRoom.ringStarted = false; }
                     io.to(m.p1.id).emit('join_match', { roomId: m.id, opponent: m.p2, tournamentId: t.id });
@@ -357,7 +377,7 @@ io.on('connection', (socket) => {
         // Trackear posiciones en el servidor para validar hits
         const room = rooms.get(roomId);
         if (room) {
-            const player = room.players.find(p => p.id === socket.id);
+            const player = room.players.find(p => p.id === moveData.id || p.id === socket.id);
             if (player) {
                 player.x = moveData.x;
                 player.y = moveData.y;
@@ -408,12 +428,12 @@ io.on('connection', (socket) => {
 
     // ✅ FIX 6: HP AUTORITATIVO + TRUE LAG COMPENSATION
     socket.on('player_hit', (data) => {
-        const { roomId, targetId, finalDamage, attackerX, isCombo, hitTimestamp } = data;
+        const { roomId, id, targetId, finalDamage, attackerX, isCombo, hitTimestamp } = data;
         const room = rooms.get(roomId);
         if (!room || room.roundTransitioning) return;
 
         // Validar que el atacante es quien está en la sala
-        const attacker = room.players.find(p => p.id === socket.id);
+        const attacker = room.players.find(p => p.id === id || p.id === socket.id);
         if (!attacker) return;
 
         // Validar rango de daño (anti-cheat básico)
@@ -446,6 +466,7 @@ io.on('connection', (socket) => {
 
             if (!wasInHitbox) {
                 const currentDist = Math.abs(attackerX - (defender.x || 0));
+                console.log(`[hit_debug] attackerX: ${attackerX}, defenderX: ${defender.x}, currentDist: ${currentDist}`);
                 if (currentDist > MAX_HIT_DISTANCE + 40) { // Tolerancia extra para el presente
                     console.log(`[hit_rejected] Room ${roomId}: True Lag Comp falló (dist=${currentDist}px)`);
                     return; // Hit rechazado, nunca estuvo en rango recientemente
@@ -454,6 +475,7 @@ io.on('connection', (socket) => {
         } else if (attacker.x !== undefined && defender && defender.x !== undefined) {
             // Fallback: usar distancia actual
             const dx = Math.abs(attackerX - defender.x);
+            console.log(`[hit_debug] Fallback attackerX: ${attackerX}, defenderX: ${defender.x}, dx: ${dx}`);
             const MAX_HIT_DISTANCE = 200; // Tolerancia legacy
             if (dx > MAX_HIT_DISTANCE) {
                 console.log(`[hit_rejected] Room ${roomId}: Fallback distance ${Math.round(dx)}px > ${MAX_HIT_DISTANCE}px`);
