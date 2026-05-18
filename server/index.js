@@ -45,7 +45,7 @@ function generateBrackets(players, tournamentId, roundNum) {
         const matchId = `T-${tournamentId}-R${roundNum}-${i}`;
         if (shuffled[i + 1]) {
             matches.push({ p1: shuffled[i], p2: shuffled[i + 1], winner: null, id: matchId });
-            rooms.set(matchId, { players: [], hp: { left: 100, right: 100 }, ringStarted: false, roundTransitioning: false });
+            rooms.set(matchId, createRoomState());
         } else {
             matches.push({ p1: shuffled[i], p2: null, winner: shuffled[i], id: matchId, bye: true });
         }
@@ -71,7 +71,7 @@ function resetRoomHp(room) {
     room.roundTransitioning = false;
     // ✅ Limpiar posiciones y estado de ataque de los jugadores
     room.players.forEach(p => {
-        p.x = undefined;
+        p.x = p.side === 'left' ? 180 : 620; // reset to spawn position
         p.y = undefined;
         p.positionHistory = []; // ✅ True Lag Compensation
         p.isAttacking = false;
@@ -162,7 +162,8 @@ io.on('connection', (socket) => {
             id: socket.id,
             name: playerName,
             face: playerFace,
-            side: room.players.length === 0 ? 'left' : 'right'
+            side: room.players.length === 0 ? 'left' : 'right',
+            x: room.players.length === 0 ? 180 : 620
         };
 
         room.players.push(player);
@@ -280,7 +281,6 @@ io.on('connection', (socket) => {
         processTournamentWin(roomId, winnerId);
     });
 
-    // --- GAME EVENTS ---
     socket.on('player_ready', (data) => {
         const { roomId, face, character, playerName } = data;
         let room = rooms.get(roomId);
@@ -288,7 +288,8 @@ io.on('connection', (socket) => {
 
         let player = room.players.find(p => p.id === socket.id);
         if (!player) {
-            player = { id: socket.id, name: playerName || 'Jugador', side: room.players.length === 0 ? 'left' : 'right' };
+            const side = room.players.length === 0 ? 'left' : 'right';
+            player = { id: socket.id, name: playerName || 'Jugador', side, x: side === 'left' ? 180 : 620 };
             room.players.push(player);
             socket.join(roomId);
         }
@@ -350,9 +351,8 @@ io.on('connection', (socket) => {
         }
     });
 
-    // ✅ FIX 4: Rate limiting en movimiento + tracking de posiciones autoritativas
+    // ✅ FIX 4: Tracking de posiciones autoritativas (sin rate limit para precisión de hits)
     socket.on('player_move', (data) => {
-        if (!moveRateLimit(socket.id)) return;
         const { roomId, ...moveData } = data;
         // Trackear posiciones en el servidor para validar hits
         const room = rooms.get(roomId);
@@ -520,25 +520,40 @@ io.on('connection', (socket) => {
         socket.to(roomId).emit('opponent_emote', { id: socket.id, emote });
     });
 
-    // ✅ FIX 8: round_ended del cliente ya no controla la ronda
-    // Solo se usa como fallback informativo para el servidor
+    // ✅ FIX 8: round_ended se dispara cuando se acaba el tiempo localmente en el cliente
     socket.on('round_ended', (data) => {
-        // Ignorado — el servidor detecta el KO directamente en player_hit
-        // Mantenido por compatibilidad con modo CPU (single player)
         const { roomId, winnerId } = data;
         const room = rooms.get(roomId);
         if (!room || room.roundTransitioning) return;
 
-        // Solo aplica para modo CPU donde no hay player_hit del servidor
-        const isCPURoom = room.players.length < 2;
-        if (!isCPURoom) return;
-
         room.roundTransitioning = true;
+        console.log(`[timeout] Room ${roomId}. Winner assigned: ${winnerId || 'Draw'}`);
+        
+        const winner = room.players.find(p => p.id === winnerId);
+        const loser = room.players.find(p => p.id !== winnerId);
+        
+        io.to(roomId).emit('server_ko', { loserId: loser?.id || 'CPU', winnerId: winner?.id });
+
         setTimeout(() => {
-            if (rooms.has(roomId)) {
-                const r = rooms.get(roomId);
-                r.roundTransitioning = false;
-                io.to(roomId).emit('start_next_round', { hp: { left: 100, right: 100 }, round: (r.round || 1) + 1 });
+            if (!rooms.has(roomId)) return;
+            const r = rooms.get(roomId);
+            r.roundTransitioning = false;
+            
+            if (winner) {
+                if (!r.wins) r.wins = { left: 0, right: 0 };
+                r.wins[winner.side]++;
+            }
+
+            if (r.wins && (r.wins.left >= 2 || r.wins.right >= 2)) {
+                io.to(roomId).emit('match_over', { winnerId, wins: r.wins });
+                if (roomId.startsWith('T-') && winnerId) {
+                    processTournamentWin(roomId, winnerId);
+                }
+            } else {
+                resetRoomHp(r);
+                r.round = (r.round || 1) + 1;
+                console.log(`[start_next_round_timeout] Room ${roomId} Round ${r.round}`);
+                io.to(roomId).emit('start_next_round', { hp: r.hp, wins: r.wins, round: r.round });
             }
         }, 2500);
     });
