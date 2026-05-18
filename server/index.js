@@ -2,7 +2,6 @@ const express = require('express');
 const http = require('http');
 const { Server } = require('socket.io');
 const cors = require('cors');
-const msgpackParser = require('socket.io-msgpack-parser');
 
 const app = express();
 app.use(cors());
@@ -14,7 +13,6 @@ const io = new Server(server, {
         origin: process.env.CLIENT_URL || "*",
         methods: ["GET", "POST"]
     },
-    parser: msgpackParser,              // ✅ Binary protocol — ~30-50% smaller packets
     maxHttpBufferSize: 1e7,
     pingInterval: 10000,
     pingTimeout: 5000,

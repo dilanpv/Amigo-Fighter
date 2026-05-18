@@ -1,5 +1,4 @@
 import { io } from 'socket.io-client';
-import * as parser from 'socket.io-msgpack-parser';
 
 // Use environment variable for production, fallback to localhost for dev
 const URL = import.meta.env.VITE_SOCKET_URL || (import.meta.env.DEV ? 'http://localhost:3001' : null);
@@ -9,7 +8,6 @@ if (!URL) {
 }
 
 export const socket = io(URL, {
-    parser,                             // ✅ Binary protocol — must match server parser
     autoConnect: true,
     reconnectionDelay: 500,             // Faster reconnection attempts
     reconnectionDelayMax: 2000,         // Cap reconnection backoff at 2s
