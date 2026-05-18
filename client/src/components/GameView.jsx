@@ -29,6 +29,7 @@ function GameView({ roomId, playerData, gameState, onEnd }) {
   const [showTutorial, setShowTutorial] = useState(false);
   const [waitingForOpponent, setWaitingForOpponent] = useState(false);
   const [rematchStatus, setRematchStatus] = useState(null);
+  const [ping, setPing] = useState(null); // ✅ Phase 3: Ping HUD
 
   const roundEndingRef = useRef(false);
   const roundAnnounceRef = useRef(null);
@@ -36,6 +37,13 @@ function GameView({ roomId, playerData, gameState, onEnd }) {
 
   useEffect(() => {
     setShowTutorial(true);
+  }, []);
+
+  // ✅ Phase 3: Listen for ping updates from FighterGame
+  useEffect(() => {
+    const handlePing = (e) => setPing(e.detail.ping);
+    window.addEventListener('update_ping', handlePing);
+    return () => window.removeEventListener('update_ping', handlePing);
   }, []);
 
   // ✅ FIX 2: HP autoritativo desde el servidor
@@ -376,11 +384,21 @@ function GameView({ roomId, playerData, gameState, onEnd }) {
           <div className="flex items-center gap-1 md:gap-4">
             <button onClick={() => onEnd(null)} className="px-1.5 py-0.5 md:px-4 md:py-2 bg-neutral-900/80 text-white font-['Bebas_Neue'] text-[10px] md:text-lg tracking-widest border border-neutral-600 rounded hover:bg-neutral-800 hover:border-red-500">SALIR</button>
             <button onClick={handleFullscreen} className="md:hidden px-2 py-1 bg-neutral-900/80 text-white font-['Bebas_Neue'] text-xs tracking-widest border border-neutral-600 rounded">⛶</button>
-            <div className="flex flex-col items-center mx-0.5 md:mx-1 bg-black/50 p-1 md:p-2 border border-neutral-800 rounded">
+            <div className="flex flex-col items-center mx-0.5 md:mx-1 bg-black/50 p-1 md:p-2 border border-neutral-800 rounded relative">
               <div className="font-['Bebas_Neue'] text-[8px] md:text-sm text-red-500 tracking-widest">RONDA {round}</div>
               <div className={`font-['Bebas_Neue'] text-2xl md:text-5xl leading-none transition-all duration-300 ${timeLeft <= 10 && timeLeft > 0 && hp.p1 > 0 && hp.p2 > 0 ? 'text-orange-400 animate-pulse scale-110' : 'text-white'}`}>
                 {hp.p1 <= 0 || hp.p2 <= 0 ? 'KO' : timeLeft}
               </div>
+              
+              {/* ✅ PING HUD (Phase 3) */}
+              {ping !== null && (
+                <div className="absolute top-[100%] left-1/2 -translate-x-1/2 mt-0.5 md:mt-1 bg-black/60 px-1 md:px-2 py-0.5 rounded border border-neutral-700 backdrop-blur-sm shadow-xl z-50 whitespace-nowrap">
+                   <div className="flex items-center gap-1.5">
+                     <div className={`w-1.5 h-1.5 rounded-full ${ping < 50 ? 'bg-green-500 shadow-[0_0_5px_#22c55e]' : ping < 120 ? 'bg-yellow-500' : 'bg-red-500 shadow-[0_0_5px_#ef4444]'}`}></div>
+                     <span className="text-[8px] md:text-xs text-neutral-300 font-mono tracking-wide">{ping}ms</span>
+                   </div>
+                </div>
+              )}
             </div>
             <button onClick={() => { if (soundRef.current) { const m = !isMuted; setIsMuted(m); soundRef.current.setMute(m); } }} className="px-1.5 py-0.5 md:px-3 md:py-2 bg-neutral-900/80 text-white font-['Bebas_Neue'] text-xs md:text-base tracking-widest border border-neutral-600 rounded hover:bg-neutral-800 hover:border-yellow-500">
               {isMuted ? '🔇' : '🔊'}

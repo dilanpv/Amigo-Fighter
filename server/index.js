@@ -2,6 +2,7 @@ const express = require('express');
 const http = require('http');
 const { Server } = require('socket.io');
 const cors = require('cors');
+const msgpackParser = require('socket.io-msgpack-parser');
 
 const app = express();
 app.use(cors());
@@ -13,6 +14,7 @@ const io = new Server(server, {
         origin: process.env.CLIENT_URL || "*",
         methods: ["GET", "POST"]
     },
+    parser: msgpackParser,              // ✅ Binary protocol — ~30-50% smaller packets
     maxHttpBufferSize: 1e7,
     transports: ['websocket'],
     allowUpgrades: false,
@@ -71,6 +73,14 @@ function createRoomState() {
 function resetRoomHp(room) {
     room.hp = { left: 100, right: 100 };
     room.roundTransitioning = false;
+    // ✅ Limpiar posiciones y estado de ataque de los jugadores
+    room.players.forEach(p => {
+        p.x = undefined;
+        p.y = undefined;
+        p.positionHistory = []; // ✅ True Lag Compensation
+        p.isAttacking = false;
+        if (p.attackTimeout) { clearTimeout(p.attackTimeout); p.attackTimeout = null; }
+    });
 }
 
 // ✅ FIX 2: Rate limiter por socket
@@ -87,7 +97,7 @@ function createRateLimiter(maxPerSec) {
 }
 
 const attackRateLimit = createRateLimiter(10);  // max 10 ataques/seg
-const moveRateLimit   = createRateLimiter(62);  // max ~60fps de movimiento
+const moveRateLimit   = createRateLimiter(32);  // max ~30fps de movimiento (reduce bandwidth 50%)
 
 function processTournamentWin(roomId, winnerId) {
     let foundTournament = null;
@@ -344,23 +354,65 @@ io.on('connection', (socket) => {
         }
     });
 
-    // ✅ FIX 4: Rate limiting en movimiento
+    // ✅ FIX 4: Rate limiting en movimiento + tracking de posiciones autoritativas
     socket.on('player_move', (data) => {
         if (!moveRateLimit(socket.id)) return;
         const { roomId, ...moveData } = data;
+        // Trackear posiciones en el servidor para validar hits
+        const room = rooms.get(roomId);
+        if (room) {
+            const player = room.players.find(p => p.id === socket.id);
+            if (player) {
+                player.x = moveData.x;
+                player.y = moveData.y;
+                player.anim = moveData.anim;
+                player.flip = moveData.flip;
+                player.lastMoveTime = Date.now();
+                
+                // ✅ True Lag Compensation: Guardar historial
+                if (!player.positionHistory) player.positionHistory = [];
+                player.positionHistory.push({ x: moveData.x, time: Date.now() });
+                // Mantener solo el último segundo (~30 snapshots)
+                while (player.positionHistory.length > 30) player.positionHistory.shift();
+            }
+        }
         socket.volatile.to(roomId).emit('opponent_move', moveData);
     });
 
-    // ✅ FIX 5: Rate limiting en ataques
+    // ✅ Ping request handler (Phase 3)
+    socket.on('ping_request', (callback) => {
+        if (typeof callback === 'function') callback();
+    });
+
+    // ✅ FIX 5: Rate limiting en ataques + tracking de estado de ataque
     socket.on('player_attack', (data) => {
         if (!attackRateLimit(socket.id)) return;
         const { roomId, ...attackData } = data;
+        // Trackear que el jugador está atacando (para validar hits)
+        const room = rooms.get(roomId);
+        if (room) {
+            const player = room.players.find(p => p.id === socket.id);
+            if (player) {
+                player.isAttacking = true;
+                player.lastAttackTime = Date.now();
+                player.lastAttackType = attackData.type;
+                // Limpiar estado de ataque después de 800ms
+                if (player.attackTimeout) clearTimeout(player.attackTimeout);
+                player.attackTimeout = setTimeout(() => { player.isAttacking = false; }, 800);
+            }
+        }
         socket.to(roomId).emit('opponent_attack', attackData);
     });
 
-    // ✅ FIX 6: HP AUTORITATIVO — el servidor calcula y valida el HP
+    // ✅ WebRTC Signaling Relay — el servidor solo retransmite señales P2P
+    socket.on('webrtc_signal', (data) => {
+        const { roomId, ...signalData } = data;
+        socket.to(roomId).emit('webrtc_signal', { roomId, ...signalData });
+    });
+
+    // ✅ FIX 6: HP AUTORITATIVO + TRUE LAG COMPENSATION
     socket.on('player_hit', (data) => {
-        const { roomId, targetId, finalDamage, attackerX, isCombo } = data;
+        const { roomId, targetId, finalDamage, attackerX, isCombo, hitTimestamp } = data;
         const room = rooms.get(roomId);
         if (!room || room.roundTransitioning) return;
 
@@ -377,10 +429,46 @@ io.on('connection', (socket) => {
         const defender = room.players.find(p => p.id === targetId);
         const defenderSide = defender?.side || (attacker.side === 'left' ? 'right' : 'left');
 
+        // ✅ True Lag Compensation: Buscar dónde estaba el defensor en el hitTimestamp
+        let defenderX = defender?.x;
+        if (defender && defender.positionHistory && hitTimestamp) {
+            // El hitTimestamp viene del reloj del cliente, aproximamos comparando la edad del hit
+            // (Asumimos clocks desincronizados, pero podemos medir el delta relativo)
+            // Forma simple: estimamos que el hit ocurrió hace un RTT/2 + Buffer (80ms)
+            // Para simplificar sin sincronizar relojes, simplemente verificamos si en el último segundo
+            // el jugador estuvo a distancia de ser golpeado.
+            let wasInHitbox = false;
+            const MAX_HIT_DISTANCE = 160; // Reducido por la mayor precisión del historial
+
+            for (const snapshot of defender.positionHistory) {
+                if (Math.abs(attackerX - snapshot.x) <= MAX_HIT_DISTANCE) {
+                    wasInHitbox = true;
+                    defenderX = snapshot.x;
+                    break;
+                }
+            }
+
+            if (!wasInHitbox) {
+                const currentDist = Math.abs(attackerX - (defender.x || 0));
+                if (currentDist > MAX_HIT_DISTANCE + 40) { // Tolerancia extra para el presente
+                    console.log(`[hit_rejected] Room ${roomId}: True Lag Comp falló (dist=${currentDist}px)`);
+                    return; // Hit rechazado, nunca estuvo en rango recientemente
+                }
+            }
+        } else if (attacker.x !== undefined && defender && defender.x !== undefined) {
+            // Fallback: usar distancia actual
+            const dx = Math.abs(attackerX - defender.x);
+            const MAX_HIT_DISTANCE = 200; // Tolerancia legacy
+            if (dx > MAX_HIT_DISTANCE) {
+                console.log(`[hit_rejected] Room ${roomId}: Fallback distance ${Math.round(dx)}px > ${MAX_HIT_DISTANCE}px`);
+                return;
+            }
+        }
+
         // Aplicar daño al HP autoritativo del servidor
         room.hp[defenderSide] = Math.max(0, room.hp[defenderSide] - validatedDamage);
 
-        console.log(`[hit] Room ${roomId}: ${defenderSide} HP = ${room.hp[defenderSide]} (-${validatedDamage})`);
+        console.log(`[hit] Room ${roomId}: ${defenderSide} HP = ${room.hp[defenderSide]} (-${validatedDamage}) dist=${attacker.x !== undefined && defender?.x !== undefined ? Math.round(Math.abs(attacker.x - defender.x)) : '?'}px`);
 
         // ✅ Emitir HP actualizado a AMBOS jugadores simultáneamente
         io.to(roomId).emit('hp_update', room.hp);

@@ -1,4 +1,5 @@
 import * as Phaser from 'phaser';
+import WebRTCManager from './WebRTCManager';
 
 export default class FighterGame extends Phaser.Scene {
     constructor() {
@@ -100,6 +101,21 @@ export default class FighterGame extends Phaser.Scene {
         this.game.events.once('startMatch', () => {
             this.matchStarted = true;
             this.resetPositions();
+
+            // ✅ WebRTC P2P: Iniciar conexión directa para movimiento (solo multiplayer)
+            if (this.gameState.players.length > 1) {
+                const mySide = this.playerData.side || 'left';
+                const isInitiator = mySide === 'left'; // left player siempre inicia
+                this.webrtc = new WebRTCManager(this.socket, this.roomId, isInitiator);
+                this.webrtc.onMessage = (event, data) => {
+                    // Procesar mensajes P2P igual que los de Socket.IO
+                    if (event === 'opponent_move') this._onOpponentMove(data);
+                    else if (event === 'opponent_attack') this._onOpponentAttack(data);
+                };
+                this.webrtc.init().catch(err => {
+                    console.warn('[FighterGame] WebRTC init failed, using Socket.IO fallback:', err.message);
+                });
+            }
         });
     }
 
@@ -334,13 +350,34 @@ export default class FighterGame extends Phaser.Scene {
     setupSocketListeners() {
         this._onOpponentMove = (data) => {
             const opp = this.players[data.id];
-            if (opp && opp.state !== 'attacking' && opp.state !== 'falling' && opp.state !== 'ko') {
-                if (opp.moveTween) opp.moveTween.stop();
-                opp.targetX = data.x;
-                opp.targetY = data.y;
-                opp.lastNetUpdate = this.time.now;
-                opp.sprite.play(`${data.anim}_${opp.id}`, true);
-                opp.sprite.setFlipX(data.flip);
+            if (opp && opp.state !== 'falling' && opp.state !== 'ko') {
+                // ✅ BUFFERED INTERPOLATION: Guardar snapshots con timestamp
+                if (!opp.posBuffer) opp.posBuffer = [];
+                const now = this.time.now;
+                opp.posBuffer.push({
+                    x: data.x, y: data.y,
+                    anim: data.anim, flip: data.flip,
+                    time: now
+                });
+                // Mantener solo últimos 20 snapshots (~600ms a 30fps)
+                while (opp.posBuffer.length > 20) opp.posBuffer.shift();
+
+                // Calcular velocidad para predicción
+                if (opp.posBuffer.length >= 2) {
+                    const prev = opp.posBuffer[opp.posBuffer.length - 2];
+                    const dt = (now - prev.time) / 1000;
+                    if (dt > 0) {
+                        opp.velocityX = (data.x - prev.x) / dt;
+                        opp.velocityY = (data.y - prev.y) / dt;
+                    }
+                }
+
+                opp.lastNetUpdate = now;
+                // Solo actualizar animación/flip inmediatamente (bajo costo)
+                if (opp.state !== 'attacking' && opp.state !== 'hit') {
+                    if (data.anim) opp.sprite.play(`${data.anim}_${opp.id}`, true);
+                    if (data.flip !== undefined) opp.sprite.setFlipX(data.flip);
+                }
             }
         };
 
@@ -388,6 +425,11 @@ export default class FighterGame extends Phaser.Scene {
             this.socket.off('server_ko', this._onServerKO);
             this.socket.off('opponent_emote', this._onOpponentEmote);
         }
+        // ✅ Limpiar WebRTC P2P
+        if (this.webrtc) {
+            this.webrtc.destroy();
+            this.webrtc = null;
+        }
         if (this.game) {
             this.game.events.off('resetRound', this.resetPositions, this);
             this.game.events.off('gameOver', this.handleGameOver, this);
@@ -409,6 +451,14 @@ export default class FighterGame extends Phaser.Scene {
             p.sprite.setFlipX(p.startFlipX);
             p.sprite.play(`idle_${p.id}`, true);
             if (p.isCPU) p.cpuTimer = 90;
+            // ✅ Limpiar buffers de interpolación y de input al resetear ronda
+            p.posBuffer = [];
+            p.velocityX = 0;
+            p.velocityY = 0;
+            p.lastSentX = p.startX;
+            p.lastSentY = p.startY;
+            p.lastSentFlip = p.startFlipX;
+            p.inputBuffer = null; // Para input buffering
         });
         this.syncGraphics();
         if (this.sound_mgr) this.sound_mgr.sfxVoFight?.();
@@ -463,26 +513,90 @@ export default class FighterGame extends Phaser.Scene {
         this.checkCombatCollision(local);
         if (this.players['CPU']) this.checkCombatCollision(this.players['CPU']);
 
-        // M-2: Lag compensation — interpolación adaptativa
+        // ✅ PROCESAR INPUT BUFFER (Phase 3)
+        // Si el jugador está libre y tiene un ataque en buffer no mayor a 200ms, ejecutarlo
+        if (local.state === 'idle' || local.state === 'blocking') {
+            if (local.inputBuffer && (this.time.now - local.inputBuffer.time < 200)) {
+                this.executeAttack(local, local.inputBuffer.type);
+                local.inputBuffer = null;
+            } else if (local.inputBuffer) {
+                // Buffer expirado
+                local.inputBuffer = null;
+            }
+        }
+
+        // ✅ PING CALCULATION (Phase 3)
+        if (!this.lastPingTime || this.time.now - this.lastPingTime > 2000) {
+            this.lastPingTime = this.time.now;
+            const start = Date.now();
+            this.socket.emit('ping_request', () => {
+                const latency = Date.now() - start;
+                // Enviar latency a React UI
+                window.dispatchEvent(new CustomEvent('update_ping', { detail: { ping: latency } }));
+            });
+        }
+
+        // ✅ BUFFERED INTERPOLATION + INPUT PREDICTION (reemplaza lerp simple)
+        const INTERP_DELAY = 80; // ms — renderizar 80ms en el pasado para suavidad
+        const renderTime = this.time.now - INTERP_DELAY;
+
         Object.values(this.players).forEach(p => {
-            if (!p.isLocal && !p.isCPU && p.targetX !== undefined && p.state !== 'attacking' && p.state !== 'hit' && p.state !== 'ko') {
-                const dx = Math.abs(p.sprite.x - p.targetX);
-                const dy = Math.abs(p.sprite.y - p.targetY);
-                const lerpX = dx > 50 ? 0.95 : dx > 15 ? 0.85 : 0.7;
-                const lerpY = dy > 50 ? 0.95 : dy > 15 ? 0.85 : 0.7;
-                p.sprite.x = Phaser.Math.Linear(p.sprite.x, p.targetX, lerpX);
-                p.sprite.y = Phaser.Math.Linear(p.sprite.y, p.targetY, lerpY);
-                if (dx < 0.5) p.sprite.x = p.targetX;
-                if (dy < 0.5) p.sprite.y = p.targetY;
+            if (!p.isLocal && !p.isCPU && p.state !== 'ko' && p.state !== 'falling') {
+                const buf = p.posBuffer;
+                if (buf && buf.length >= 2) {
+                    // Encontrar los dos snapshots entre los que interpolar
+                    let before = buf[0];
+                    let after = buf[buf.length - 1];
+                    let found = false;
+
+                    for (let i = 0; i < buf.length - 1; i++) {
+                        if (buf[i].time <= renderTime && buf[i + 1].time >= renderTime) {
+                            before = buf[i];
+                            after = buf[i + 1];
+                            found = true;
+                            break;
+                        }
+                    }
+
+                    if (found) {
+                        // Interpolar suavemente entre los dos snapshots
+                        const range = after.time - before.time;
+                        const t = range > 0 ? Math.min(1, (renderTime - before.time) / range) : 1;
+                        p.sprite.x = Phaser.Math.Linear(before.x, after.x, t);
+                        p.sprite.y = Phaser.Math.Linear(before.y, after.y, t);
+                    } else {
+                        // Estamos más allá del último snapshot — extrapolar con predicción
+                        const latest = buf[buf.length - 1];
+                        const timeSinceLastUpdate = (this.time.now - (p.lastNetUpdate || 0)) / 1000;
+
+                        if (timeSinceLastUpdate < 0.2 && p.velocityX !== undefined) {
+                            // Predecir posición basada en la última velocidad conocida
+                            const predX = latest.x + (p.velocityX || 0) * timeSinceLastUpdate;
+                            const predY = latest.y + (p.velocityY || 0) * timeSinceLastUpdate;
+                            // Clamp a los límites del mundo
+                            p.sprite.x = Phaser.Math.Clamp(predX, 30, 770);
+                            p.sprite.y = Phaser.Math.Clamp(predY, 0, 420);
+                        } else {
+                            // Sin datos recientes, snap a la última posición conocida
+                            p.sprite.x = Phaser.Math.Linear(p.sprite.x, latest.x, 0.3);
+                            p.sprite.y = Phaser.Math.Linear(p.sprite.y, latest.y, 0.3);
+                        }
+                    }
+                } else if (buf && buf.length === 1) {
+                    // Solo un snapshot — lerp suave hacia él
+                    p.sprite.x = Phaser.Math.Linear(p.sprite.x, buf[0].x, 0.3);
+                    p.sprite.y = Phaser.Math.Linear(p.sprite.y, buf[0].y, 0.3);
+                }
             }
         });
     }
 
     handleCPU(cpu, player) {
+        // CPU ajustado: reacciones más rápidas y más probabilidad de combos/bloqueo
         const CPU_CONFIGS = {
-            facil:   { reactionMin: 8,  reactionMax: 18, blockChance: 0.55, comboChance: 0.40, jumpChance: 0.15, dodgeChance: 0.20, counterChance: 0.15 },
-            normal:  { reactionMin: 3,  reactionMax: 8,  blockChance: 0.75, comboChance: 0.65, jumpChance: 0.20, dodgeChance: 0.35, counterChance: 0.30 },
-            dificil: { reactionMin: 1,  reactionMax: 3,  blockChance: 0.92, comboChance: 0.90, jumpChance: 0.30, dodgeChance: 0.50, counterChance: 0.45 },
+            facil:   { reactionMin: 6,  reactionMax: 14, blockChance: 0.60, comboChance: 0.50, jumpChance: 0.15, dodgeChance: 0.25, counterChance: 0.25 },
+            normal:  { reactionMin: 2,  reactionMax: 6,  blockChance: 0.85, comboChance: 0.75, jumpChance: 0.25, dodgeChance: 0.45, counterChance: 0.55 },
+            dificil: { reactionMin: 1,  reactionMax: 2,  blockChance: 0.98, comboChance: 0.95, jumpChance: 0.35, dodgeChance: 0.65, counterChance: 0.85 },
         };
         const diff = { ...(CPU_CONFIGS[this.cpuDifficulty] || CPU_CONFIGS.dificil) };
 
@@ -504,77 +618,106 @@ export default class FighterGame extends Phaser.Scene {
         const dist = Math.abs(cpu.sprite.x - player.sprite.x);
         const onGround = cpu.sprite.body.blocked.down;
 
-        if (player.state === 'attacking' && dist < 140 && onGround) {
-            if (Math.random() < diff.blockChance && cpu.state !== 'blocking') {
+        // 1. Lógica de Bloqueo (Mejorada: Mantiene el bloqueo mientras el jugador ataca)
+        if (player.state === 'attacking' && dist < 170 && onGround) {
+            if (cpu.state !== 'blocking' && Math.random() < diff.blockChance) {
                 cpu.sprite.setVelocityX(0);
                 cpu.state = 'blocking';
                 cpu.sprite.play(`block_${cpu.id}`, true);
-                cpu.cpuTimer = 20;
+            }
+            if (cpu.state === 'blocking') {
+                cpu.cpuTimer = 15; // Mantener el timer alto mientras el jugador siga atacando
                 return;
             }
         }
 
-        if (cpu.state === 'blocking' && player.state !== 'attacking' && cpu.cpuTimer <= 8) {
-            cpu.state = 'idle';
-            if (Math.random() < diff.counterChance && dist < 100) {
-                this.executeAttack(cpu, 'hook');
-                cpu.cpuTimer = 5;
-                return;
+        // 2. Soltar Bloqueo y Contraatacar
+        if (cpu.state === 'blocking') {
+            if (player.state !== 'attacking') {
+                cpu.cpuTimer--;
+                if (cpu.cpuTimer <= 0) {
+                    cpu.state = 'idle';
+                    if (Math.random() < diff.counterChance && dist < 140) {
+                        this.executeAttack(cpu, Math.random() < 0.5 ? 'hook' : 'kick');
+                        cpu.cpuTimer = 10;
+                    }
+                }
             }
+            return; // Si está bloqueando no hace nada más
         }
 
+        // 3. Timer de reacción
         cpu.cpuTimer--;
         if (cpu.cpuTimer > 0) return;
         cpu.cpuTimer = diff.reactionMin + Math.random() * (diff.reactionMax - diff.reactionMin);
 
-        if (dist > 100) {
+        // 4. Movimiento y Ataque
+        if (dist > 130) {
+            // Acercarse
             const dir = player.sprite.x > cpu.sprite.x ? 1 : -1;
-            const cpuSpeedMult = cpu.spec.style === 'Velocista' ? 1.4 : cpu.spec.style === 'Agresivo' ? 1.15 : 1.0;
-            cpu.sprite.setVelocityX(dir * 220 * cpuSpeedMult);
+            const cpuSpeedMult = cpu.spec.style === 'Velocista' ? 1.4 : cpu.spec.style === 'Agresivo' ? 1.25 : 1.1;
+            cpu.sprite.setVelocityX(dir * 250 * cpuSpeedMult); // CPU es un poco más rápido ahora
             cpu.sprite.play(`walk_fwd_${cpu.id}`, true);
             cpu.sprite.setFlipX(dir === -1);
-            if (dist > 200 && onGround && Math.random() < 0.25) {
-                cpu.sprite.setVelocityY(-500);
+            
+            // Saltos ocasionales si está lejos
+            if (dist > 250 && onGround && Math.random() < diff.jumpChance) {
+                cpu.sprite.setVelocityY(-550);
                 cpu.sprite.play(`jump_${cpu.id}`, true);
             }
         } else {
+            // Está en rango de ataque (dist <= 130)
             cpu.sprite.setVelocityX(0);
-            const r = Math.random();
-            if (player.state === 'attacking' && r < diff.dodgeChance && cpu.state !== 'blocking') {
+            
+            // Esquiva ocasional
+            if (player.state === 'attacking' && Math.random() < diff.dodgeChance) {
                 const escapeDir = cpu.sprite.x > player.sprite.x ? 1 : -1;
-                cpu.sprite.setVelocityX(escapeDir * 350);
-                cpu.cpuTimer = 6;
+                cpu.sprite.setVelocityX(escapeDir * 400);
+                cpu.cpuTimer = 15;
                 return;
             }
-            if (diff.comboChance > 0 && r < diff.comboChance) {
+
+            // Elegir ataque
+            if (diff.comboChance > 0 && Math.random() < diff.comboChance) {
+                // Combo brutal
                 this.executeAttack(cpu, 'jab');
-                this.time.delayedCall(250, () => { if (!this.gameOver && cpu.state !== 'ko') this.executeAttack(cpu, 'hook'); });
-                this.time.delayedCall(500, () => { if (!this.gameOver && cpu.state !== 'ko') this.executeAttack(cpu, 'kick'); });
-            } else if (r < 0.28) { this.executeAttack(cpu, 'jab'); }
-            else if (r < 0.50)   { this.executeAttack(cpu, 'hook'); }
-            else if (r < 0.68)   { this.executeAttack(cpu, 'kick'); }
-            else if (r < 0.82)   { this.executeAttack(cpu, 'special'); }
-            else if (onGround && r < 0.82 + diff.jumpChance) {
-                cpu.sprite.setVelocityY(-500);
-                cpu.sprite.play(`jump_${cpu.id}`, true);
+                this.time.delayedCall(200, () => { if (!this.gameOver && cpu.state !== 'ko') this.executeAttack(cpu, 'hook'); });
+                this.time.delayedCall(450, () => { if (!this.gameOver && cpu.state !== 'ko') this.executeAttack(cpu, 'special'); });
             } else {
-                cpu.sprite.play(`idle_${cpu.id}`, true);
+                // Ataque simple aleatorio
+                const r2 = Math.random();
+                if (r2 < 0.3) this.executeAttack(cpu, 'jab');
+                else if (r2 < 0.6) this.executeAttack(cpu, 'hook');
+                else if (r2 < 0.85) this.executeAttack(cpu, 'kick');
+                else this.executeAttack(cpu, 'special');
             }
         }
     }
 
     handleLocalInput(local) {
         const onGround = local.sprite.body.blocked.down;
+
+        // ✅ INPUT BUFFERING (Phase 3) - Guardar el input si estamos atacando
+        let attackAttempt = null;
+        if (Phaser.Input.Keyboard.JustDown(this.attackKeys.A) || this.mobileKeys['65_justDown']) { attackAttempt = 'jab'; this.mobileKeys['65_justDown'] = false; }
+        else if (Phaser.Input.Keyboard.JustDown(this.attackKeys.S) || this.mobileKeys['83_justDown']) { attackAttempt = 'hook'; this.mobileKeys['83_justDown'] = false; }
+        else if (Phaser.Input.Keyboard.JustDown(this.attackKeys.D) || this.mobileKeys['68_justDown']) { attackAttempt = 'kick'; this.mobileKeys['68_justDown'] = false; }
+        else if (Phaser.Input.Keyboard.JustDown(this.attackKeys.W) || this.mobileKeys['87_justDown']) { attackAttempt = 'special'; this.mobileKeys['87_justDown'] = false; }
+
+        if (attackAttempt) {
+            if (local.state === 'attacking') {
+                // Guardar en el buffer para ejecutarlo apenas termine la animación
+                local.inputBuffer = { type: attackAttempt, time: this.time.now };
+                return; // Ignorar el resto del input frame
+            } else {
+                this.executeAttack(local, attackAttempt);
+            }
+        }
+
         if (local.state === 'attacking') return;
 
         let moved = false;
         let anim = 'idle';
-
-        // Check attacks
-        if (Phaser.Input.Keyboard.JustDown(this.attackKeys.A) || this.mobileKeys['65_justDown']) { this.executeAttack(local, 'jab'); this.mobileKeys['65_justDown'] = false; }
-        else if (Phaser.Input.Keyboard.JustDown(this.attackKeys.S) || this.mobileKeys['83_justDown']) { this.executeAttack(local, 'hook'); this.mobileKeys['83_justDown'] = false; }
-        else if (Phaser.Input.Keyboard.JustDown(this.attackKeys.D) || this.mobileKeys['68_justDown']) { this.executeAttack(local, 'kick'); this.mobileKeys['68_justDown'] = false; }
-        else if (Phaser.Input.Keyboard.JustDown(this.attackKeys.W) || this.mobileKeys['87_justDown']) { this.executeAttack(local, 'special'); this.mobileKeys['87_justDown'] = false; }
 
         const styleSpeedMult = local.spec.style === 'Velocista' ? 1.5 : local.spec.style === 'Agresivo' ? 1.1 : local.spec.style === 'Defensivo' ? 0.85 : 1.0;
         const baseSpeed = 160 + (this.stats.spd * 20);
@@ -619,16 +762,30 @@ export default class FighterGame extends Phaser.Scene {
 
         local.wasOnGround = onGround;
 
+        // ✅ DELTA COMPRESSION: Solo enviar cuando hay cambios significativos, a 30fps máx
         if (moved || anim !== local.lastAnim) {
             local.sprite.play(`${anim}_${local.id}`, true);
             const now = this.time.now;
             const animChanged = anim !== local.lastAnim;
-            if (!local.lastEmitTime || now - local.lastEmitTime >= 16 || animChanged) {
-                this.socket.emit('player_move', {
+            const flipChanged = local.sprite.flipX !== local.lastSentFlip;
+            const posChanged = Math.abs(local.sprite.x - (local.lastSentX || 0)) > 2
+                            || Math.abs(local.sprite.y - (local.lastSentY || 0)) > 2;
+
+            // Enviar a 30fps máx (33ms), o inmediatamente si cambió la animación/flip
+            if ((posChanged || animChanged || flipChanged) &&
+                (!local.lastEmitTime || now - local.lastEmitTime >= 33 || animChanged || flipChanged)) {
+                const movePayload = {
                     roomId: this.roomId, id: this.playerData.id,
                     x: Math.round(local.sprite.x), y: Math.round(local.sprite.y),
                     anim, flip: local.sprite.flipX
-                });
+                };
+                // ✅ WebRTC P2P: enviar movimiento directo al peer si conectado
+                const sentP2P = this.webrtc?.send('opponent_move', movePayload);
+                // Siempre enviar por Socket.IO también (el servidor necesita las posiciones para validar hits)
+                this.socket.emit('player_move', movePayload);
+                local.lastSentX = local.sprite.x;
+                local.lastSentY = local.sprite.y;
+                local.lastSentFlip = local.sprite.flipX;
                 local.lastEmitTime = now;
             }
             local.lastAnim = anim;
@@ -645,7 +802,11 @@ export default class FighterGame extends Phaser.Scene {
             else if (type === 'kick')    this.sound_mgr.sfxKick?.();
             else if (type === 'special') this.sound_mgr.sfxSpecial?.();
         }
-        this.socket.emit('player_attack', { roomId: this.roomId, id: this.playerData.id, type });
+        const attackPayload = { roomId: this.roomId, id: this.playerData.id, type };
+        // ✅ WebRTC P2P: enviar ataque directo al peer para menor latencia
+        this.webrtc?.send('opponent_attack', attackPayload);
+        // Siempre enviar por Socket.IO (el servidor trackea ataques para validación)
+        this.socket.emit('player_attack', attackPayload);
         if (f.attackTimer) this.time.removeEvent(f.attackTimer);
         f.attackTimer = this.time.delayedCall(600, () => { if (f.state === 'attacking') f.state = 'idle'; });
         f.sprite.once('animationcomplete', () => { if (f.state === 'attacking') f.state = 'idle'; });
@@ -714,7 +875,9 @@ export default class FighterGame extends Phaser.Scene {
                     targetId: defender.id,
                     finalDamage,
                     attackerX: attacker.sprite.x,
-                    isCombo
+                    isCombo,
+                    // ✅ True Lag Compensation: Enviar timestamp local
+                    hitTimestamp: Date.now() - 80 // Restamos los 80ms del buffer visual
                 });
 
                 // ✅ Efectos visuales locales inmediatos (no esperamos al servidor para la animación)
