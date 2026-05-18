@@ -448,13 +448,10 @@ io.on('connection', (socket) => {
         // ✅ True Lag Compensation: Buscar dónde estaba el defensor en el hitTimestamp
         let defenderX = defender?.x;
         if (defender && defender.positionHistory && hitTimestamp) {
-            // El hitTimestamp viene del reloj del cliente, aproximamos comparando la edad del hit
-            // (Asumimos clocks desincronizados, pero podemos medir el delta relativo)
-            // Forma simple: estimamos que el hit ocurrió hace un RTT/2 + Buffer (80ms)
-            // Para simplificar sin sincronizar relojes, simplemente verificamos si en el último segundo
-            // el jugador estuvo a distancia de ser golpeado.
             let wasInHitbox = false;
-            const MAX_HIT_DISTANCE = 160; // Reducido por la mayor precisión del historial
+            // Aumentado a 260 porque los sprites miden 250px de ancho (125px desde el centro) 
+            // más el offset del hitbox (hasta 115px). Distancia máxima teórica = ~240px.
+            const MAX_HIT_DISTANCE = 260; 
 
             for (const snapshot of defender.positionHistory) {
                 if (Math.abs(attackerX - snapshot.x) <= MAX_HIT_DISTANCE) {
@@ -476,7 +473,7 @@ io.on('connection', (socket) => {
             // Fallback: usar distancia actual
             const dx = Math.abs(attackerX - defender.x);
             console.log(`[hit_debug] Fallback attackerX: ${attackerX}, defenderX: ${defender.x}, dx: ${dx}`);
-            const MAX_HIT_DISTANCE = 200; // Tolerancia legacy
+            const MAX_HIT_DISTANCE = 300; // Tolerancia legacy aumentada
             if (dx > MAX_HIT_DISTANCE) {
                 console.log(`[hit_rejected] Room ${roomId}: Fallback distance ${Math.round(dx)}px > ${MAX_HIT_DISTANCE}px`);
                 return;
@@ -621,6 +618,15 @@ io.on('connection', (socket) => {
                 room.players.splice(playerIndex, 1);
                 io.to(roomId).emit('opponent_left_match');
                 io.to(roomId).emit('player_left', socket.id);
+                
+                // ✅ Inmediatamente dar la victoria al oponente en torneo
+                if (roomId.startsWith('T-')) {
+                    const opponent = room.players[0]; // El que queda
+                    if (opponent) {
+                        console.log(`[leave_match] Forfeit in ${roomId}. Winner: ${opponent.id}`);
+                        processTournamentWin(roomId, opponent.id);
+                    }
+                }
             }
             if (room.players.length === 0) rooms.delete(roomId);
         }
