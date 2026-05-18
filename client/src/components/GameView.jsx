@@ -222,14 +222,20 @@ function GameView({ roomId, playerData, gameState, onEnd }) {
   }, [timeLeft]);
 
   useEffect(() => {
+    let opponentLeftTimeout;
     const handleOpponentLeft = () => {
       if (hp.p1 > 0) {
         setMatchWinnerId(playerData.id);
-        if (roomId?.startsWith('T-')) setTimeout(() => onEnd(playerData.id), 2000);
+        if (roomId?.startsWith('T-')) {
+            opponentLeftTimeout = setTimeout(() => onEnd(playerData.id), 2000);
+        }
       }
     };
     socket.on('opponent_left_match', handleOpponentLeft);
-    return () => socket.off('opponent_left_match', handleOpponentLeft);
+    return () => {
+        socket.off('opponent_left_match', handleOpponentLeft);
+        if (opponentLeftTimeout) clearTimeout(opponentLeftTimeout);
+    };
   }, [hp.p1, playerData.id, roomId]);
 
   // N-6: Rematch listeners

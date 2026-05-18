@@ -263,7 +263,7 @@ function CharacterSelect({ playerData, opponentInfo, onReady, onBack }) {
         </div>
 
         {/* RIGHT: PREVIEW & START */}
-        <div className={`flex-1 flex flex-col bg-neutral-950/80 backdrop-blur-md border border-neutral-800 p-4 md:p-6 rounded-lg shadow-2xl ${mobileStep === 2 ? 'flex' : 'hidden lg:flex'}`}>
+        <div className={`flex-1 flex flex-col bg-neutral-950/80 backdrop-blur-md border border-neutral-800 p-4 md:p-6 rounded-lg shadow-2xl overflow-y-auto ${mobileStep === 2 ? 'flex' : 'hidden lg:flex'}`}>
           <button 
             className="lg:hidden mb-4 py-2 text-xl font-['Bebas_Neue'] tracking-widest bg-neutral-800 text-white rounded border border-neutral-600" 
             onClick={() => setMobileStep(1)}

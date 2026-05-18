@@ -199,9 +199,17 @@ function App() {
     window.scrollTo(0, 0);
 
     if (roomId && typeof roomId === 'string' && roomId.startsWith('T-')) {
-        // Tournament match — report win if there's a winner, then return to bracket
-        if (winnerId) socket.emit('report_win', { roomId, winnerId });
-        setScreen('bracket');
+        if (winnerId) {
+            socket.emit('report_win', { roomId, winnerId });
+            setScreen('bracket');
+        } else {
+            // User intentionally left, forfeit match
+            if (roomId) {
+                socket.emit('leave_match', { roomId });
+                socket.emit('leave_tournament', { tournamentId: roomId });
+            }
+            setScreen('tournament_hub');
+        }
     } else {
         // Normal match — leave the room and go back to lobby
         if (roomId) socket.emit('leave_match', { roomId });
@@ -239,7 +247,15 @@ function App() {
           playerData={playerData} 
           opponentInfo={opponentInfo}
           onReady={handleCharacterReady} 
-          onBack={() => setScreen('lobby')}
+          onBack={() => {
+              if (roomId && typeof roomId === 'string' && roomId.startsWith('T-')) {
+                  socket.emit('leave_match', { roomId });
+                  socket.emit('leave_tournament', { tournamentId: roomId });
+                  setScreen('tournament_hub');
+              } else {
+                  setScreen('lobby');
+              }
+          }}
         />
       )}
       {screen === 'loading' && (
@@ -247,7 +263,11 @@ function App() {
           <button 
             onClick={() => {
               if (roomId && typeof roomId === 'string' && roomId.startsWith('T-')) {
-                  setScreen('bracket');
+                  if (roomId) {
+                      socket.emit('leave_match', { roomId });
+                      socket.emit('leave_tournament', { tournamentId: roomId });
+                  }
+                  setScreen('tournament_hub');
               } else {
                   if (roomId) socket.emit('leave_match', { roomId });
                   setScreen('lobby');
