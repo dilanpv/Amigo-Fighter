@@ -16,8 +16,6 @@ const io = new Server(server, {
     },
     parser: msgpackParser,              // ✅ Binary protocol — ~30-50% smaller packets
     maxHttpBufferSize: 1e7,
-    transports: ['websocket'],
-    allowUpgrades: false,
     pingInterval: 10000,
     pingTimeout: 5000,
     perMessageDeflate: false,
